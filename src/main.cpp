@@ -1,9 +1,16 @@
 #include "main.h"
 
-using namespace std;
+ofstream ClientToAU;	//file to write client input date
+ofstream ServerToAU;	//file to write server output data
+unsigned char server_buf[SERVER_BUF_SZ];	//buffer to hold server output data
+unsigned char client_buf[CLIENT_BUF_SZ];	//buffer to hold client input data
+unsigned char *sbuf_ptr = server_buf;
+unsigned char *cbuf_prt = client_buf;
+uint32_t retnum = 0;	//bytes read from socket
+uint32_t next_len = 0;	//the length will be received next, usually specified by the head-package
 
 /* handle the errors */
-void error(bool perror_en, const char* format, ...) {
+void error(AU_BOOL perror_en, const char* format, ...) {
     va_list args;
     char error_msg[1024];
     va_start(args, format);
@@ -18,39 +25,40 @@ void error(bool perror_en, const char* format, ...) {
 }
 
 /* produce a hex dump */
-void hexdump(unsigned char *p, unsigned int len)
+void hexdump(unsigned char *p, uint32_t len)
 {
     unsigned char *line = p;
-	int i, linelen, offset = 0;
+    uint32_t i, linelen, offset = 0;
 
-	while(offset < len)
-	{
-		cout << hex << setfill('0') << setw(4) << offset << ' ';
+    while(offset < len)
+    {
+        cout << hex << setfill('0') << setw(4) << offset << ' ';
 		
-		linelen = len - offset;
-		linelen = linelen > 16 ? 16:linelen;
+        linelen = len - offset;
+	linelen = linelen > 16 ? 16:linelen;
 
-		for(i = 0; i < linelen; i++){
-			cout << hex << setfill('0') << setw(2) << (int)line[i] << ' ';
-		}
-		for(; i < 16; i++){
-			cout << "   ";
-		}
+	for(i = 0; i < linelen; i++){
+	    cout << hex << setfill('0') << setw(2) << (int)line[i] << ' ';
+	}
+	for(; i < 16; i++){
+	    cout << "   ";
+	}
 
-		for(i = 0; i < linelen; i++){
-			unsigned char alpha_char;
-			alpha_char = (line[i] >= 0x20 && line[i] < 0x7f) ? line[i]:'.';
-			cout << alpha_char;
-		}
-		cout << endl;
-
-		offset += linelen;
-		line += linelen;
+	for(i = 0; i < linelen; i++){
+	    unsigned char alpha_char;
+	    alpha_char = (line[i] >= 0x20 && line[i] < 0x7f) ? line[i]:'.';
+	    cout << alpha_char;
 	}
 	cout << endl;
+
+	offset += linelen;
+	line += linelen;
+    }
+    cout << endl;
 }
 
 /* set a given socket into non-blocking mode */
+//not used yet --zhongbin
 void SetNonBlocking(int sock)
 {
     int flags;
@@ -58,53 +66,46 @@ void SetNonBlocking(int sock)
 	flags = 0;
     }
     if(fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0){
-	error(true, "ERROR: cannot set socket into non-blocking");
+	error(True, "ERROR: cannot set socket into non-blocking");
     }
 }
 
 int main(int argc, char *argv[]) 
 {
-    uint32_t sockfd, portno, n;
-    struct sockaddr_in serv_addr;
+    uint32_t sockfd, portno;
     struct hostent *server;
-    int32_t retnum;
-    // buffer to hold read data
-    char read_buffer[256];
-    // file to write server output
-    ofstream out_file;
 
     // parse argv, set port and server
     if (argc < 3){
-        error(false, "ERROR: invalid arguments.  Usage is '%s <hostname> <port>'", argv[0]);
+        error(False, "ERROR: invalid arguments.  Usage is '%s <hostname> <port>'", argv[0]);
     }
     portno = atoi(argv[2]);
-	if(portno < VNC_PORT_BASE){
-        error(false, "ERROR: invalid port number.  Port number should not less then 5900");
-	}
+    if(portno < VNC_PORT_BASE){
+        error(False, "ERROR: invalid port number.  Port number should not less then 5900");
+    }
     server = gethostbyname(argv[1]);
     if (server == NULL){
-        error(false, "ERROR: cannot find host");
+        error(False, "ERROR: cannot find host");
     }
 
-    // set serv_addr
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-    serv_addr.sin_port = htons(portno);
-	
     // create socket and connect to server
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0){
-        error(true, "ERROR: cannot open socket");
-    }
-    if (connect(sockfd, (const struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
-        error(true, "ERROR: cannot connect to server");
+        error(True, "ERROR: cannot open socket");
     }
 
-//    SetNonBlocking(sockfd);
+    ClientToAU.open("client.pkts");
+    ServerToAU.open("server.pkts");
 
-    out_file.open("recv.pkts");
-    bool cont = true;
+    //Initialize the connection between AutoGUI and VNC-Server, include the handshakes.
+    if ( !InitToServer(server, portno, sockfd) ){
+        error(False, "ERROR: cannot complete the init to server");
+    }
+
+
+/*
+    AU_BOOL cont = True;
+
     while (cont) {
         //cout << ".";
         cout.flush();
@@ -121,13 +122,16 @@ int main(int argc, char *argv[])
             out_file.write(read_buffer, retnum);
             out_file.flush();
         } else {
-            cont = false;
+            cont = False;
         }
     }
     out_file.close();
     if (retnum < 0){
-        error(true, "ERROR: reading from socket");
+        error(True, "ERROR: reading from socket");
     }
+*/
+    ClientToAU.close();
+    ServerToAU.close();
 
-  	return 0;
-  }
+    return 0;
+}

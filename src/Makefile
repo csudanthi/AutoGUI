@@ -1,10 +1,17 @@
-all: autogui
+CC=g++
+Flags= -Wall -ggdb
 
-autogui: main.o
-	g++ -ggdb main.o -o autogui
 
-main.o: main.cpp
-	g++ -ggdb -c main.cpp
+#all: autogui
+#
+#autogui: main.o
+#	g++ -ggdb main.o -o autogui
+#
+#main.o: main.cpp
+#	g++ -ggdb -c main.cpp
+#
 
+all: 
+	${CC} ${Flags} *.cpp -o autogui
 clean:
-	rm *.o autogui
+	rm -f autogui

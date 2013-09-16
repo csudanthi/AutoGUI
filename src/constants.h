@@ -1,0 +1,1 @@
+#define VNC_PORT_BASE 5900

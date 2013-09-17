@@ -1,48 +1,13 @@
 #include "main.h"
 
+/* initialize the si by the server-init message*/
 void InitSI(uint32_t sockfd)
 {
-    AU_BOOL swap;
-    if( *(uint8_t *)(sbuf_ptr+6) == 0){
-        swap = True;	//the pixel value is little-endian, but the host byte order is big-endian, so swap
-    }
-    else{
-        swap = False;
-    }
+    const AU_BOOL swap = True; //the server-init is little-endian , but the host byte order is big-endian, so swap
 
     memset(&si, 0, SZ_SERVER_INIT_MSG);
-    si.framebufferWidth = *(uint16_t *)sbuf_ptr;
-
-
-    sbuf_ptr += 2;
-    si.framebufferHeight = *(uint16_t *)sbuf_ptr;
-    sbuf_ptr += 2;
-
-    si.format.bitsPerPixel = *(uint8_t *)sbuf_ptr;
-    sbuf_ptr++;
-    si.format.depth = *(uint8_t *)sbuf_ptr;
-    sbuf_ptr++;
-    si.format.bigEndian = *(uint8_t *)sbuf_ptr;
-    sbuf_ptr++;
-    si.format.trueColour = *(uint8_t *)sbuf_ptr;
-
-    sbuf_ptr++;
-    si.format.redMax = *(uint16_t *)sbuf_ptr;
-    sbuf_ptr += 2;
-    si.format.greenMax = *(uint16_t *)sbuf_ptr;
-    sbuf_ptr += 2;
-    si.format.blueMax = *(uint16_t *)sbuf_ptr;
-    sbuf_ptr += 2;
-    si.format.redShift = *(uint8_t *)sbuf_ptr;
-    sbuf_ptr++;
-    si.format.greenShift = *(uint8_t *)sbuf_ptr;
-    sbuf_ptr++;
-    si.format.blueShift = *(uint8_t *)sbuf_ptr;
-    sbuf_ptr += 4;
-
-    si.nameLength = *(uint32_t *)sbuf_ptr;
-    sbuf_ptr += 4;
-
+    memcpy(&si, sbuf_ptr, SZ_SERVER_INIT_MSG);
+    sbuf_ptr += SZ_SERVER_INIT_MSG;
     if(swap){
         si.framebufferWidth = Swap16(si.framebufferWidth);
         si.framebufferHeight = Swap16(si.framebufferHeight);
@@ -75,6 +40,25 @@ void InitSI(uint32_t sockfd)
     #endif
 }
 
+/* print the default server pixelformat */
+void PrintPixelFormat(PixelFormat *format)
+{
+    cout << "The default server PixelFormat:" << endl \
+         << (unsigned int)format->bitsPerPixel << " bits per pixel." << endl \
+         << (format->bigEndian ? "Most" : "Least") << " significant byte first in each pixel." << endl;
+    if(format->trueColour){
+        cout << "True colour: max red: " << (unsigned int)format->redMax << " green: " << (unsigned int)format->greenMax \
+             << " blue: " << (unsigned int)format->blueMax << ", shift red: " << (unsigned int)format->redShift \
+             << " green: " << (unsigned int)format->greenShift << " blue: " << (unsigned int)format->blueShift << endl;
+    }
+    else{
+        cout << "Colour map (not true colour)." << endl;
+    }
+    cout << endl;
+}
+
+
+/* finish the connection between AutoGUI and vnc-server */
 AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
 {
     struct sockaddr_in serv_addr;
@@ -148,16 +132,18 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     /* read serverinit message */
     //retnum = recv(sockfd, sbuf_ptr, SZ_SERVER_INIT_MSG, 0);
     retnum = recv(sockfd, sbuf_ptr, 24, 0);
-    //if(retnum != SZ_SERVER_INIT_MSG){
-    if(retnum != 24){
+    if(retnum != SZ_SERVER_INIT_MSG){
         error(True, "ERROR: cannot received server initialization message");
     }
 
     /* initialize si */
     InitSI(sockfd);
+    
+    #ifdef DEBUG
+    PrintPixelFormat(&si.format);
+    #endif
 
-    cout << "happy" << endl;
-   
+    cout << "Worked!" << endl;
     return True; 
 }
 

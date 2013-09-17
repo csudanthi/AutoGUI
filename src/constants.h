@@ -10,15 +10,4 @@
 #define MajorVersion (3)
 #define MinorVersion (7)
 
-#define AU_SEC_TYPE 1	//default secure type for AutoGUI
-
-
-
-//boolean type for AutoGUI
-typedef int AU_BOOL;
-#ifndef True
-#define False (0)
-#define True (1)
-#endif
-
 

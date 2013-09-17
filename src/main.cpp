@@ -9,6 +9,13 @@ unsigned char *cbuf_prt = client_buf;
 uint32_t retnum = 0;	//bytes read from socket
 uint32_t next_len = 0;	//the length will be received next, usually specified by the head-package
 
+ServerInitMsg si;
+unsigned char ConstName[] = "AutoGUI";
+unsigned char *desktopName = ConstName;
+
+uint8_t AU_SEC_TYPE = 1;	//default secure type(no authentication) for AutoGUI
+uint8_t AU_SHARED_FLAG = 0; 	//default shared-flag(exclusive) for AutoGUI
+
 /* handle the errors */
 void error(AU_BOOL perror_en, const char* format, ...) {
     va_list args;

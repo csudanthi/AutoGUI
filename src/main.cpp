@@ -101,38 +101,39 @@ int main(int argc, char *argv[])
         error(True, "ERROR: cannot open socket");
     }
 
-    ClientToAU.open("client.pkts");
-    ServerToAU.open("server.pkts");
+    ClientToAU.open("UsrIn.pkts");
+    ServerToAU.open("VncOut.pkts");
 
     //Initialize the connection between AutoGUI and VNC-Server, include the handshakes.
     if ( !InitToServer(server, portno, sockfd) ){
         error(False, "ERROR: cannot complete the init to server");
     }
 
-
+    
 /*
     AU_BOOL cont = True;
 
     while (cont) {
         //cout << ".";
-        cout.flush();
-        retnum = read(sockfd, read_buffer, 256);
+        //cout.flush();
+        retnum = recv(sockfd, sbuf_ptr, 256, 0);
+	#ifdef DEBUG
+	cout << "retnum:" << retnum << endl;
+	#endif
+        if (retnum > 0){
 	    #ifdef DEBUG
-		cout << "retnum:" << retnum << endl;
+            sbuf_ptr += retnum;
+	    cout << "##Received data from server##" << endl;
+	    hexdump(server_buf, (unsigned int)(sbuf_ptr - server_buf));
 	    #endif
-        if (retnum > 0) {
-			#ifdef DEBUG
-			cout << "##Received data from server##" << endl;
-			hexdump((unsigned char *)read_buffer, retnum);
-			#endif
 
-            out_file.write(read_buffer, retnum);
-            out_file.flush();
-        } else {
+           // out_file.write(read_buffer, retnum);
+           // out_file.flush();
+        } 
+        else{
             cont = False;
         }
     }
-    out_file.close();
     if (retnum < 0){
         error(True, "ERROR: reading from socket");
     }

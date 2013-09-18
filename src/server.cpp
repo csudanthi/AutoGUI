@@ -1,5 +1,14 @@
 #include "main.h"
 
+/* setup the pixel data format and the encoding of pixel data */
+void SetFormatAndEncodings()
+{
+    /* This function is empty because we wish our record file can be used by 
+     * all the vnc-server, including gem5 simulator. 
+     * So, AutoGUI won't send/forward any "SetPixelFormat" or "SetEncodings" messages to vnc-server.
+     */
+}
+
 /* initialize the si by the server-init message*/
 void InitSI(uint32_t sockfd)
 {
@@ -143,7 +152,10 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     PrintPixelFormat(&si.format);
     #endif
 
-    cout << "Worked!" << endl;
+    /* setup the pixel data format and the encoding of pixel data */
+    SetFormatAndEncodings();
+
+    cout << "Successfully connect to vnc server" << endl;
     return True; 
 }
 

@@ -59,3 +59,4 @@ void SetNonBlocking(int sock);
 AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd);
 void InitSI(uint32_t sockfd);
 void PrintPixelFormat(PixelFormat *format);
+void SetFormatAndEncodings();

@@ -5,13 +5,14 @@ ofstream ServerToAU;	//file to write server output data
 unsigned char server_buf[SERVER_BUF_SZ];	//buffer to hold server output data
 unsigned char client_buf[CLIENT_BUF_SZ];	//buffer to hold client input data
 unsigned char *sbuf_ptr = server_buf;
-unsigned char *cbuf_prt = client_buf;
+unsigned char *cbuf_ptr = client_buf;
 uint32_t retnum = 0;	//bytes read from socket
 uint32_t next_len = 0;	//the length will be received next, usually specified by the head-package
 
 ServerInitMsg si;
 unsigned char ConstName[] = "AutoGUI";
 unsigned char *desktopName = ConstName;
+unsigned char *p_si = NULL;
 
 uint8_t AU_SEC_TYPE = 1;	//default secure type(no authentication) for AutoGUI
 uint8_t AU_SHARED_FLAG = 0; 	//default shared-flag(exclusive) for AutoGUI
@@ -79,65 +80,66 @@ void SetNonBlocking(int sock)
 
 int main(int argc, char *argv[]) 
 {
-    uint32_t sockfd, portno;
+    uint32_t SockToServer, SockToClient, SockListen, server_port, au_port;
     struct hostent *server;
 
-    // parse argv, set port and server
-    if (argc < 3){
-        error(False, "ERROR: invalid arguments.  Usage is '%s <hostname> <port>'", argv[0]);
+    // parse argv, set server-name, server-port and AutoGUI port
+    if (argc < 4){
+        error(False, "ERROR: invalid arguments.  Usage is '%s <hostname> <server-port> <AutoGUI-port>'", argv[0]);
     }
-    portno = atoi(argv[2]);
-    if(portno < VNC_PORT_BASE){
+    server_port = atoi(argv[2]);
+    if(server_port < VNC_PORT_BASE){
         error(False, "ERROR: invalid port number.  Port number should not less then 5900");
     }
     server = gethostbyname(argv[1]);
     if (server == NULL){
         error(False, "ERROR: cannot find host");
     }
+    au_port = atoi(argv[3]);
+    if(au_port < VNC_PORT_BASE){
+        error(False, "ERROR: invalid listenning port number.  Port number should not less then 5900");
+    }
 
-    // create socket and connect to server
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0){
+    // create sockets
+    SockToServer = socket(AF_INET, SOCK_STREAM, 0);
+    if (SockToServer < 0){
+        error(True, "ERROR: cannot open socket");
+    }
+    SockListen = socket(AF_INET, SOCK_STREAM, 0);
+    if (SockListen < 0){
         error(True, "ERROR: cannot open socket");
     }
 
     ClientToAU.open("UsrIn.pkts");
     ServerToAU.open("VncOut.pkts");
 
-    //Initialize the connection between AutoGUI and VNC-Server, include the handshakes.
-    if ( !InitToServer(server, portno, sockfd) ){
-        error(False, "ERROR: cannot complete the init to server");
+    // Initialize the connection between AutoGUI and VNC-Server, include handshakes
+    if ( !InitToServer(server, server_port, SockToServer) ){
+        error(False, "ERROR: cannot complete the init to vnc-server");
     }
 
-    
-/*
-    AU_BOOL cont = True;
-
-    while (cont) {
-        //cout << ".";
-        //cout.flush();
-        retnum = recv(sockfd, sbuf_ptr, 256, 0);
-	#ifdef DEBUG
-	cout << "retnum:" << retnum << endl;
-	#endif
-        if (retnum > 0){
-	    #ifdef DEBUG
-            sbuf_ptr += retnum;
-	    cout << "##Received data from server##" << endl;
-	    hexdump(server_buf, (unsigned int)(sbuf_ptr - server_buf));
-	    #endif
-
-           // out_file.write(read_buffer, retnum);
-           // out_file.flush();
-        } 
-        else{
-            cont = False;
-        }
+    // Listen on the au_port which the vnc-client will connect to
+    if( !ListenTcpPort(au_port, SockListen) ){
+        error(False, "ERROR: cannot listen on port(%d)", au_port);
     }
-    if (retnum < 0){
-        error(True, "ERROR: reading from socket");
+
+    // Wait for vnc-client
+    SockToClient = AcceptVncClient(SockListen);
+    cout << "A VNC client has been accepted." << endl;
+    #ifdef DEBUG
+    cout << (int)SockToClient << endl;
+    #endif
+
+    // Initialize the connection between AutoGUI and VNC-Client, include handshakes
+    if( !InitToClient(SockToClient) ){
+        error(False, "ERROR: cannot complete the init to vnc-client");
     }
-*/
+
+    // The main loop of AutoGUI
+    while(True){
+       // if()
+    }
+
     ClientToAU.close();
     ServerToAU.close();
 

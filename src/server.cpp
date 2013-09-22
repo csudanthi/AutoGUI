@@ -89,23 +89,26 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     retnum = recv(sockfd, sbuf_ptr, RFBPROTOVER_SZ, 0);
     memcpy(RfbProtoVersion, sbuf_ptr, RFBPROTOVER_SZ);
     sbuf_ptr += retnum;
-/*
     #ifdef DEBUG
     hexdump((unsigned char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
     cout << "The RFB proto version of server is:" << endl << RfbProtoVersion << endl;
     #endif
+/*
 */
     if( sscanf(RfbProtoVersion, "RFB %03d.%03d\n", &server_major, &server_minor) != 2 ){
         error(False, "ERROR: not a valid vnc server");
     }
     if(server_major != MajorVersion || server_minor < MinorVersion){
-        error(False, "ERROR: sorry, AutoGUI only support RFB3.7 right now");
+        error(False, "ERROR: sorry, AutoGUI only support RFB v3.7 right now");
     }
 
     /* send RFB proto version used by AutoGUI */
     if( send(sockfd, AU_USED_VER_MSG, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
         error(True, "ERROR: cannot send version massage");
     }
+    #ifdef DEBUG
+    cout << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG <<endl;
+    #endif
     
     /* read security type message */
     retnum = recv(sockfd, sbuf_ptr, 1, 0);
@@ -119,16 +122,19 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     #ifdef DEBUG
     hexdump((unsigned char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
     #endif
-    
-    /* send security type and read check info */
+    /* send security type */
     if(send(sockfd, (char *)&AU_SEC_TYPE, 1, 0) != 1){
         error(True, "ERROR: cannot send security type");
     }
+/*
+    //only the v3.8 will return 4 bytes check info
     retnum = recv(sockfd, sbuf_ptr, 4, 0);
     if(retnum != 4){
         error(True, "ERROR: cannot get the security type check info");
     }
+   cout << 5 << endl; 
     sbuf_ptr += retnum;
+*/
     #ifdef DEBUG
     hexdump((unsigned char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
     #endif
@@ -138,12 +144,17 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
         error(True, "ERROR: cannot send shared-flag");
     }
     
-    /* read serverinit message */
-    //retnum = recv(sockfd, sbuf_ptr, SZ_SERVER_INIT_MSG, 0);
-    retnum = recv(sockfd, sbuf_ptr, 24, 0);
+    /* read serverinit message and store a copy*/
+    retnum = recv(sockfd, sbuf_ptr, SZ_SERVER_INIT_MSG, 0);
     if(retnum != SZ_SERVER_INIT_MSG){
         error(True, "ERROR: cannot received server initialization message");
     }
+    p_si = (unsigned char *)malloc(SZ_SERVER_INIT_MSG);
+    if(!p_si){
+        error(True, "ERROR: cannot malloc memory for p_si");
+    }
+    memset(p_si, 0, SZ_SERVER_INIT_MSG);
+    memcpy(p_si, sbuf_ptr, SZ_SERVER_INIT_MSG);
 
     /* initialize si */
     InitSI(sockfd);

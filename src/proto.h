@@ -60,3 +60,9 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd);
 void InitSI(uint32_t sockfd);
 void PrintPixelFormat(PixelFormat *format);
 void SetFormatAndEncodings();
+
+/* client.cpp */
+AU_BOOL ListenTcpPort(uint32_t au_port, uint32_t SockListen);
+uint32_t AcceptVncClient(uint32_t SockListen);
+AU_BOOL InitToClient(uint32_t sockfd);
+

@@ -32,5 +32,9 @@ extern uint32_t next_len;	//the length will be received next
 
 extern ServerInitMsg si;	//initialization message received from vnc-server
 extern unsigned char *desktopName;
+extern unsigned char ConstName[];
+extern unsigned char *p_si;
 extern uint8_t AU_SEC_TYPE;	//default secure type(no authentication) for AutoGUI
 extern uint8_t AU_SHARED_FLAG; 	//default shared-flag(exclusive) for AutoGUI
+
+

@@ -1,6 +1,6 @@
 
 /* boolean type for AutoGUI */
-typedef int AU_BOOL;
+typedef uint32_t AU_BOOL;
 #ifndef True
 #define False (0)
 #define True (1)
@@ -13,6 +13,13 @@ typedef int AU_BOOL;
                     ((s) & 0x0000ff00) << 8 | \
                     ((s) << 24) \
                   )
+
+/* Structure used to pass parameter to child-thread */
+typedef struct _SocketSet{
+    uint32_t SocketToClient;  // the socket which received data from vnc-client
+    uint32_t SocketToServer;  // the socket which received data from vnc-server
+}SocketSet;
+#define SZ_SOCKET_SET (8)
 
 /* Structure used to specify pixel format */
 typedef struct _PixelFormat{
@@ -53,6 +60,9 @@ typedef struct _ServerInitMsg{
 void error(AU_BOOL perror_en, const char* format, ...);
 void hexdump(unsigned char *p, unsigned int len);
 void SetNonBlocking(int sock);
+void ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len);
+void WriteSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len);
+
 
 
 /* server.cpp */
@@ -60,9 +70,14 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd);
 void InitSI(uint32_t sockfd);
 void PrintPixelFormat(PixelFormat *format);
 void SetFormatAndEncodings();
+void *STCMainLoop(void *sockset);
+void WriteServerBuf();
+AU_BOOL HandleSTCMsg(SocketSet *s_sockset);
 
 /* client.cpp */
 AU_BOOL ListenTcpPort(uint32_t au_port, uint32_t SockListen);
 uint32_t AcceptVncClient(uint32_t SockListen);
 AU_BOOL InitToClient(uint32_t sockfd);
-
+void *CTSMainLoop(void *sockset);
+void WriteClientBuf();
+AU_BOOL HandleCTSMsg(SocketSet *c_sockset);

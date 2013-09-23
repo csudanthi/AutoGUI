@@ -1,5 +1,5 @@
 CC=g++
-Flags= -Wall -ggdb
+Flags= -Wall -ggdb -lpthread
 
 
 #all: autogui

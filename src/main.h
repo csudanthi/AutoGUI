@@ -8,10 +8,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
+#include <linux/tcp.h>
 
+#include <pthread.h>
+
+#include <sys/time.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <iomanip>
+
 
 #include "constants.h"
 #include "proto.h"
@@ -38,3 +44,6 @@ extern uint8_t AU_SEC_TYPE;	//default secure type(no authentication) for AutoGUI
 extern uint8_t AU_SHARED_FLAG; 	//default shared-flag(exclusive) for AutoGUI
 
 
+#ifndef TCP_ESTABLISHED 
+#define TCP_ESTABLISHED 1
+#endif

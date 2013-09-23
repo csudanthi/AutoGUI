@@ -11,3 +11,11 @@
 #define MinorVersion (7)
 
 #define AU_SEC_TYPE_MSG "\1\1"
+
+//Client to Server message type 
+#define rfbSetPixelFormat 0
+#define rfbSetEncodings 2
+#define rfbFramebufferUpdateRequest 3
+#define rfbKeyEvent 4
+#define rfbPointerEvent 5
+#define rfbClientCutText 6

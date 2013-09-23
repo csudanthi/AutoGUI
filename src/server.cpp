@@ -1,5 +1,21 @@
 #include "main.h"
 
+/* write back server buffer */
+void WriteServerBuf()
+{
+    ServerToAU.write((const char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
+    memset(server_buf, 0, SERVER_BUF_SZ);
+    sbuf_ptr = server_buf;
+}
+
+/* The loop which forward data from Server To Client */
+void *STCMainLoop(void *sockset)
+{
+    //<==keep going from here.
+
+    return (void *)True;
+}
+
 /* setup the pixel data format and the encoding of pixel data */
 void SetFormatAndEncodings()
 {

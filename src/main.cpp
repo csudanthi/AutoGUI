@@ -17,6 +17,20 @@ unsigned char *p_si = NULL;
 uint8_t AU_SEC_TYPE = 1;	//default secure type(no authentication) for AutoGUI
 uint8_t AU_SHARED_FLAG = 0; 	//default shared-flag(exclusive) for AutoGUI
 
+void ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)
+{
+    if( recv(sockfd, ptr, len, 0) != len ){
+        error(True, "ERROR: [socket id:%d] recv: ", sockfd);
+    }
+}
+
+void WriteSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)
+{
+    if( send(sockfd, ptr, len, 0) != len ){
+        error(True, "ERROR: [socket id:%d] send: ", sockfd);
+    }
+}
+
 /* handle the errors */
 void error(AU_BOOL perror_en, const char* format, ...) {
     va_list args;
@@ -78,6 +92,24 @@ void SetNonBlocking(int sock)
     }
 }
 
+/* check a socket is closed or not */
+AU_BOOL SocketConnected(uint32_t sockfd)
+{
+    struct tcp_info info;
+    int len = sizeof(info);
+
+    if(sockfd <= 0){
+        return False;
+    }
+    
+    getsockopt(sockfd, IPPROTO_TCP, TCP_INFO, &info, (socklen_t *)&len);
+    if( info.tcpi_state == TCP_ESTABLISHED ){
+        return True;
+    }
+    return False;
+}
+
+
 int main(int argc, char *argv[]) 
 {
     uint32_t SockToServer, SockToClient, SockListen, server_port, au_port;
@@ -136,10 +168,84 @@ int main(int argc, char *argv[])
     }
 
     // The main loop of AutoGUI
-    while(True){
-       // if()
+    SocketSet sockset;
+    sockset.SocketToClient = SockToClient;
+    sockset.SocketToServer = SockToServer;
+
+    pthread_t ctid, stid;
+    void *c_return, *s_return;
+    
+    if( pthread_create(&ctid, NULL, CTSMainLoop, (void *)&sockset) != 0){
+        error(True, "ERROR: pthread_create ctid(%d): ", ctid);
+    }
+    if( pthread_create(&stid, NULL, STCMainLoop, (void *)&sockset) != 0){
+        error(True, "ERROR: pthread_create stid(%d): ", stid);
+    }
+    
+    // Wait the child-threads exit
+    if( pthread_join(ctid, &c_return) != 0){
+        error(True, "ERROR: pthread_join ctid(%d): ", ctid);
+    }
+    if( pthread_join(stid, &s_return) != 0){
+        error(True, "ERROR: pthread_join stid(%d): ", stid);
     }
 
+    //if( (AU_BOOL)c_return && (AU_BOOL)s_return){
+    cout << dec << ((int *)c_return) << endl;
+    if( (((AU_BOOL *)c_return)) && (((AU_BOOL *)s_return)) ){
+        cout << "All threads are finished rightly." << endl;
+    }
+    while(True){}
+    
+/*
+        int n, i, j=0;
+        fd_set rfds, wfds;
+        struct timeval tv;
+cout << "Enter main loop:" << endl;
+    while(True){
+        FD_ZERO(&rfds);
+        FD_ZERO(&wfds);
+        FD_SET(SockToClient, &rfds);
+//        FD_SET(SockToClient, &wfds);
+        tv.tv_sec = 10;
+        tv.tv_usec = 0;
+        n = SockToClient + 1;
+        i = select(n, &rfds, &wfds, NULL, &tv);
+        switch(i){
+            case -1:
+                error(True, "ERROR: select :");
+            case 0:
+                cout << "Timeout once." << endl;
+                continue;
+            case 1:
+                cout << "Socket can be read now" << endl;
+                break;
+            default:
+                error(False, "Should never be here.");
+        }
+        cout << "Socket status: " << SocketConnected(SockToClient) << endl;
+        retnum = recv(SockToClient, cbuf_ptr, 256, 0);
+        if(retnum < 0){
+            error(True, "ERROR: cannot received one bytes");
+        }   
+        if(retnum == 0){
+            cout << "SockToClient has closed" << endl;
+            cout << "Socket status: " << SocketConnected(SockToClient) << endl;
+*/
+/*
+            j = send(SockToClient, "dd", 2, MSG_NOSIGNAL);
+            cout << "j " << j << endl;
+            cout << "errno: " << errno << endl;
+            if(errno == EPIPE){cout << "find you" << endl;}
+            perror("send 2: ");
+*/          
+/*
+            exit(0);
+        }
+        cout << "retnum: " << retnum << endl;
+        cbuf_ptr += retnum;
+    }
+*/
     ClientToAU.close();
     ServerToAU.close();
 

@@ -1,5 +1,123 @@
 #include "main.h"
 
+/* write back client buffer */
+void WriteClientBuf()
+{
+    ClientToAU.write((const char*)client_buf, (uint32_t)(cbuf_ptr - client_buf));
+    memset(client_buf, 0, CLIENT_BUF_SZ);
+    cbuf_ptr = client_buf;
+}
+
+void CheckClientBuf(uint32_t used)
+{
+    if(used > CLIENT_BUF_SZ - 100){
+        WriteClientBuf();
+    }
+}
+
+/* return False if socket closed by vnc-client, otherwise return True */
+AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
+{
+    uint32_t c_retnum, encoding_len;
+    uint8_t c_msg_type;
+    uint16_t encoding_num;
+    
+    c_retnum = recv(c_sockset->SocketToClient, cbuf_ptr, 1, 0);
+    if(c_retnum == 0){  // socket has been closed by vnc-client
+        return False;
+    }
+    else if(c_retnum != 1){
+        error(True, "ERROR: [HandleCTSMsg] recv msg type: ");
+    }
+    c_msg_type = *((uint8_t *)cbuf_ptr);
+    cbuf_ptr++;
+    //AutoGUI will only forward the framebufferupdaterequest, pointerevent and keyevent message
+    switch(c_msg_type){
+        case rfbSetPixelFormat: 
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
+            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 19);
+            cbuf_ptr += 19;
+            break;
+        case rfbSetEncodings:
+            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 3);
+            cbuf_ptr++;
+            encoding_num = Swap16(*((uint16_t *)cbuf_ptr));
+            encoding_len = 4*encoding_num;
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) + encoding_len );
+            cbuf_ptr += 2;
+            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, encoding_len);
+            cbuf_ptr += encoding_len;
+            break;
+        case rfbFramebufferUpdateRequest:
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
+            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 9);
+            cbuf_ptr--;
+            WriteSocket(c_sockset->SocketToServer, cbuf_ptr, 10);
+            cbuf_ptr += 10;
+            break;
+        case rfbKeyEvent:
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
+            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 7);
+            cbuf_ptr--;
+            WriteSocket(c_sockset->SocketToServer, cbuf_ptr, 8);
+            cbuf_ptr += 8;
+            break;
+           //<== here 
+            
+            
+    }
+    
+
+    return True;
+}
+/* The loop which forward data from Client To Server 
+ * return True while user quit, otherwise return False
+ */
+
+void *CTSMainLoop(void *sockset)
+{
+    uint32_t n, i;
+    fd_set c_rfds;
+    struct timeval tv;
+    SocketSet *c_sockset = (SocketSet *)sockset;
+
+    //write back buffer before MainLoop
+    WriteClientBuf();
+
+    // Enter Client-To-Server Main Loop
+    #ifdef DEBUG
+    cout << "Enter Client-To-Server Main Loop" << endl;
+    #endif
+    while(true){
+        FD_ZERO(&c_rfds);
+        FD_SET(c_sockset->SocketToClient, &c_rfds);
+        tv.tv_sec = 30; //default timeout 30s
+        tv.tv_usec = 0;
+        n = c_sockset->SocketToClient + 1;
+        i = select(n, &c_rfds, NULL, NULL, &tv);
+        switch(i){
+            case -1:
+                error(True, "ERROR: [CTSMainLoop] select ");
+            case 0:
+                //timeout
+                continue;
+            case 1:
+                //socket can be recv now
+                break;
+            default:
+                error(False, "ERROR: [CTSMainLoop] Should never be here.");
+        }
+        if( !FD_ISSET(c_sockset->SocketToClient, &c_rfds) ){  //check again
+            continue;
+        }
+        // HandleCTSMsg will return False if socket closed by vnc-client, otherwise return True
+        if( !HandleCTSMsg(c_sockset) ){
+            return (void *)True;
+        }
+    }
+}
+
+
 /* AutoGUI will listenning on the specified tcp port */
 AU_BOOL ListenTcpPort(uint32_t port, uint32_t SockListen)
 {

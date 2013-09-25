@@ -13,6 +13,14 @@ typedef uint32_t AU_BOOL;
                     ((s) & 0x0000ff00) << 8 | \
                     ((s) << 24) \
                   )
+typedef struct _RectUpdate{
+    uint16_t x_pos;
+    uint16_t y_pos;
+    uint16_t width;
+    uint16_t height;
+    uint32_t encoding_type;
+}RectUpdate;
+#define SZ_RECT_UPDATE ( 8+4 )
 
 /* Structure used to pass parameter to child-thread */
 typedef struct _SocketSet{
@@ -60,9 +68,9 @@ typedef struct _ServerInitMsg{
 void error(AU_BOOL perror_en, const char* format, ...);
 void hexdump(unsigned char *p, unsigned int len);
 void SetNonBlocking(int sock);
-void ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len);
-void WriteSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len);
-
+AU_BOOL ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len);
+AU_BOOL WriteSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len);
+AU_BOOL SocketConnected(uint32_t sockfd);
 
 
 /* server.cpp */
@@ -80,4 +88,5 @@ uint32_t AcceptVncClient(uint32_t SockListen);
 AU_BOOL InitToClient(uint32_t sockfd);
 void *CTSMainLoop(void *sockset);
 void WriteClientBuf();
+AU_BOOL ChechClientBuf(uint32_t used);
 AU_BOOL HandleCTSMsg(SocketSet *c_sockset);

@@ -19,3 +19,38 @@
 #define rfbKeyEvent 4
 #define rfbPointerEvent 5
 #define rfbClientCutText 6
+
+//length of each cts_message head
+#define HSZ_SET_PIXEL_FORMAT 20
+#define HSZ_SET_ENCODING 4
+#define HSZ_FRAME_BUFFER_UPDATE_REQUEST 10
+#define HSZ_KEY_EVENT 8
+#define HSZ_POINTER_EVENT 6
+#define HSZ_CLIENT_CUT_TEXT 8
+
+//Server to Client message type
+#define rfbFramebufferUpdate 0
+#define rfbSetColourMapEntries 1
+#define rfbBell 2
+#define rfbServerCutText 3
+
+//length of each stc_message head
+#define HSZ_FRAME_BUFFER_UPDATE 4
+#define HSZ_SET_COLOUR_MAP_ENTRIES 6
+#define HSZ_SERVER_CUT_TEXT 8
+
+
+//the max length can be read/write socket once
+#define SZ_PER_OPT (2*1024*1024)
+
+//Pixel date encoding type
+#define rfbEncodingRaw 0
+
+
+
+
+
+
+
+
+

@@ -8,20 +8,24 @@ void WriteClientBuf()
     cbuf_ptr = client_buf;
 }
 
-void CheckClientBuf(uint32_t used)
+/* return True if writeback, otherwise return False */
+AU_BOOL CheckClientBuf(uint32_t used)
 {
     if(used > CLIENT_BUF_SZ - 100){
         WriteClientBuf();
+        return True;
     }
+    return False;
 }
 
-/* return False if socket closed by vnc-client, otherwise return True */
+/* return False if socketset are closed by vnc-client or vnc-server, otherwise return True */
 AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 {
-    uint32_t c_retnum, encoding_len;
-    uint8_t c_msg_type;
+    uint32_t c_retnum, encoding_len, text_len;
+    uint8_t cts_msg_type;
     uint16_t encoding_num;
-    
+  
+    //read cts_msg_type  
     c_retnum = recv(c_sockset->SocketToClient, cbuf_ptr, 1, 0);
     if(c_retnum == 0){  // socket has been closed by vnc-client
         return False;
@@ -29,51 +33,127 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
     else if(c_retnum != 1){
         error(True, "ERROR: [HandleCTSMsg] recv msg type: ");
     }
-    c_msg_type = *((uint8_t *)cbuf_ptr);
-    cbuf_ptr++;
-    //AutoGUI will only forward the framebufferupdaterequest, pointerevent and keyevent message
-    switch(c_msg_type){
+    cts_msg_type = *((uint8_t *)cbuf_ptr);
+
+    /*********************************************************
+     * AutoGUI will only forward the following message type: *
+     *       framebufferupdaterequest,                       *
+     *       pointerevent                                    *
+     *       keyevent                                        *
+     *       clientcuttext                                   *
+     *********************************************************/
+    switch(cts_msg_type){
         case rfbSetPixelFormat: 
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# C-->S:rfbSetPixelFormat" << endl;
+            #endif
+            //read setpixelformat msg
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_SET_PIXEL_FORMAT - 1);
+            cbuf_ptr += HSZ_SET_PIXEL_FORMAT;
+
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
-            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 19);
-            cbuf_ptr += 19;
             break;
         case rfbSetEncodings:
-            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 3);
-            cbuf_ptr++;
-            encoding_num = Swap16(*((uint16_t *)cbuf_ptr));
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# C-->S:rfbSetEncodings" << endl;
+            #endif
+            //read setencodings msg head
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_SET_ENCODING - 1);
+            encoding_num = Swap16(*((uint16_t *)(cbuf_ptr + 2)));
             encoding_len = 4*encoding_num;
+            cbuf_ptr += HSZ_SET_ENCODING;
+
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) + encoding_len );
-            cbuf_ptr += 2;
-            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, encoding_len);
+            //read setencodings msg data
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr, encoding_len);
             cbuf_ptr += encoding_len;
             break;
         case rfbFramebufferUpdateRequest:
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# C-->S:rfbFramebufferUpdateRequest    [Forward]" << endl;
+            #endif
+            //read framebufferupdaterequest msg and forward it with msg_type
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_FRAME_BUFFER_UPDATE_REQUEST - 1);
+             
+            #ifdef FORCE_UPDATE
+            //tell the vnc-server update the framebuffer non-incremental
+            *((uint8_t *)(cbuf_ptr + 1)) = 0;
+            #endif
+
+            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_FRAME_BUFFER_UPDATE_REQUEST) ){
+                return False;
+            }
+            #ifdef ANALYZE_PKTS
+            uint16_t x_pos, y_pos, width, height;
+            uint8_t incremental;
+            incremental =  *((uint8_t *)(cbuf_ptr + 1));
+            x_pos = Swap16( *((uint16_t *)(cbuf_ptr + 2)) );
+            y_pos = Swap16( *((uint16_t *)(cbuf_ptr + 4)) );
+            width = Swap16( *((uint16_t *)(cbuf_ptr + 6)) );
+            height = Swap16( *((uint16_t *)(cbuf_ptr + 8)) );
+            cout << "         rect: " << dec << (int)x_pos << "," << (int)y_pos;
+            cout << dec << "," << (int)width << "," << (int)height;
+            cout << "  incremental:" << dec << (int)incremental << endl;
+            #endif
+            cbuf_ptr += HSZ_FRAME_BUFFER_UPDATE_REQUEST;
+
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
-            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 9);
-            cbuf_ptr--;
-            WriteSocket(c_sockset->SocketToServer, cbuf_ptr, 10);
-            cbuf_ptr += 10;
             break;
         case rfbKeyEvent:
-            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
-            ReadSocket(c_sockset->SocketToServer, cbuf_ptr, 7);
-            cbuf_ptr--;
-            WriteSocket(c_sockset->SocketToServer, cbuf_ptr, 8);
-            cbuf_ptr += 8;
-            break;
-           //<== here 
-            
-            
-    }
-    
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# C-->S:rfbKeyEvent                    [Forward]" << endl;
+            #endif
+            //read keyevent msg and forward it with msg_type
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_KEY_EVENT - 1);
+            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_KEY_EVENT) ){
+                return False;
+            }
+            cbuf_ptr += HSZ_KEY_EVENT;
 
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
+            break;
+        case rfbPointerEvent:
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# C-->S:rfbPointerEvent                [Forward]" << endl;
+            #endif
+            //read pointerevent msg and forward it with msg_type
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_POINTER_EVENT - 1);
+            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_POINTER_EVENT) ){
+                return False;
+            }
+            cbuf_ptr += HSZ_POINTER_EVENT;
+
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
+            break;
+        case rfbClientCutText:
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# C-->S:rfbClientCutText               [Forward]" << endl;
+            #endif
+            //read and forward cuttext msg head 
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_CLIENT_CUT_TEXT - 1);
+            text_len = Swap32(*((uint32_t *)(cbuf_ptr + 4)));
+            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_CLIENT_CUT_TEXT) ){
+                return False;
+            }
+            cbuf_ptr += HSZ_CLIENT_CUT_TEXT;
+
+            CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) + text_len );
+            //read and forward cuttext msg data
+            ReadSocket(c_sockset->SocketToClient, cbuf_ptr, text_len);
+            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, text_len) ){
+                return False;
+            }
+            cbuf_ptr += text_len;
+            break;
+        default:     //as the AutoGUI won't forward setencoding message
+            error(False, "ERROR: [HandleCTSMsg] This msg-type(%d) should not appear.", cts_msg_type);
+    }
     return True;
 }
-/* The loop which forward data from Client To Server 
- * return True while user quit, otherwise return False
- */
 
+/* The loop which forward data from Client To Server 
+ * return True while user quit, otherwise keep going
+ */
 void *CTSMainLoop(void *sockset)
 {
     uint32_t n, i;
@@ -81,7 +161,7 @@ void *CTSMainLoop(void *sockset)
     struct timeval tv;
     SocketSet *c_sockset = (SocketSet *)sockset;
 
-    //write back buffer before MainLoop
+    //write back buffer before Main Loop
     WriteClientBuf();
 
     // Enter Client-To-Server Main Loop
@@ -97,20 +177,21 @@ void *CTSMainLoop(void *sockset)
         i = select(n, &c_rfds, NULL, NULL, &tv);
         switch(i){
             case -1:
-                error(True, "ERROR: [CTSMainLoop] select ");
+                perror("ERROR: [CTSMainLoop] select ");
             case 0:
                 //timeout
                 continue;
             case 1:
-                //socket can be recv now
+                //socket can be read now
                 break;
             default:
-                error(False, "ERROR: [CTSMainLoop] Should never be here.");
+                error(False, "ERROR: [CTSMainLoop] select: should not be here.");
         }
         if( !FD_ISSET(c_sockset->SocketToClient, &c_rfds) ){  //check again
             continue;
         }
-        // HandleCTSMsg will return False if socket closed by vnc-client, otherwise return True
+
+        // HandleCTSMsg will return False if socketset are closed by vnc-client or vnc-server, otherwise return True
         if( !HandleCTSMsg(c_sockset) ){
             return (void *)True;
         }
@@ -195,7 +276,7 @@ AU_BOOL InitToClient(uint32_t sockfd)
     retnum =recv(sockfd, cbuf_ptr, 1, 0);
     cbuf_ptr += retnum;
     #ifdef DEBUG
-    hexdump(client_buf, (uint32_t)(cbuf_ptr - client_buf));
+   // hexdump(client_buf, (uint32_t)(cbuf_ptr - client_buf));
     #endif 
  
     /* send serverinit message */
@@ -208,6 +289,6 @@ AU_BOOL InitToClient(uint32_t sockfd)
         error(True, "ERROR: cannot send desktopName massage");
     }
 
-    cout << "Successfully connected by vnc client" << endl;
+    cout << "[Step two] Successfully connect to vnc client" << endl << endl;
     return True;
 }

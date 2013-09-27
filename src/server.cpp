@@ -76,6 +76,9 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
                 rect.y_pos = Swap16(rect.y_pos);
                 rect.width = Swap16(rect.width);
                 rect.height = Swap16(rect.height);
+                if( (rect.x_pos + rect.width > si.framebufferWidth) || (rect.y_pos + rect.height > si.framebufferHeight) ){
+                    cout << "Rect too large: " << dec << (int)rect.width << "x" << (int)rect.height << "at (" << (int)rect.x_pos << ", " << (int)rect.y_pos << ")" << endl;
+                }
                 #ifdef ANALYZE_PKTS
                 //cout << "         rect: " << dec << (int)rect.x_pos << "," << (int)rect.y_pos;
                 //cout << dec << "," << (int)rect.width << "," << (int)rect.height << endl;
@@ -286,6 +289,7 @@ void PrintPixelFormat(PixelFormat *format)
     else{
         cout << "Colour map (not true colour)." << endl;
     }
+    cout << "The width and height of framebuffer is: " << dec << (int)si.framebufferWidth << "," << (int)si.framebufferHeight << endl;
     cout << endl;
 }
 
@@ -295,7 +299,6 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
 {
     struct sockaddr_in serv_addr;
     char RfbProtoVersion[RFBPROTOVER_SZ + 1];
-    uint32_t server_major, server_minor;
 
     /* set serv_addr */
     memset(&serv_addr, 0, sizeof(serv_addr));
@@ -322,15 +325,27 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
         error(False, "ERROR: not a valid vnc server");
     }
     if(server_major != MajorVersion || server_minor < MinorVersion){
-        error(False, "ERROR: sorry, AutoGUI only support RFB v3.7 right now");
+        error(False, "ERROR: sorry, AutoGUI only support RFB v3.7 and v3.8 right now");
     }
 
     /* send RFB proto version used by AutoGUI */
-    if( send(sockfd, AU_USED_VER_MSG, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
-        error(True, "ERROR: cannot send version massage");
+    if(server_minor == 8){
+        if( send(sockfd, AU_USED_VER_MSG_38, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
+            error(True, "ERROR: cannot send version massage");
+        }
+        cout << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG_38 <<endl;
+    }
+    else if(server_minor == 7){
+        if( send(sockfd, AU_USED_VER_MSG_37, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
+            error(True, "ERROR: cannot send version massage");
+        }
+        cout << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG_37 <<endl;
+    }
+    else{
+        error(False, "ERROR: server_minor should be 7 or 8");
     }
     #ifdef DEBUG
-  //  cout << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG <<endl;
+    cout << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG <<endl;
     #endif
     
     /* read security type message */
@@ -349,18 +364,22 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     if(send(sockfd, (char *)&AU_SEC_TYPE, 1, 0) != 1){
         error(True, "ERROR: cannot send security type");
     }
-/*
+
     //only the v3.8 will return 4 bytes check info
-    retnum = recv(sockfd, sbuf_ptr, 4, 0);
-    if(retnum != 4){
-        error(True, "ERROR: cannot get the security type check info");
+    if(server_minor == 8){
+        retnum = recv(sockfd, sbuf_ptr, 4, 0);
+        if(retnum != 4){
+            error(True, "ERROR: cannot get the security type check info");
+        }
+        if( *((uint32_t *)sbuf_ptr) != 0 ){
+            error(False, "ERROR: cannot use none security type");
+        }
+        #ifdef DEBUG
+        hexdump((unsigned char *)sbuf_ptr, 4);
+        #endif
+        sbuf_ptr += retnum;
     }
-   cout << 5 << endl; 
-    sbuf_ptr += retnum;
-*/
-    #ifdef DEBUG
-  //  hexdump((unsigned char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
-    #endif
+
     
     /* send clientinit message */
     if(send(sockfd, (char *)&AU_SHARED_FLAG, 1, 0) != 1){
@@ -382,8 +401,8 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     /* initialize si */
     InitSI(sockfd);
     
-    #ifdef DEBUG
     PrintPixelFormat(&si.format);
+    #ifdef DEBUG
     #endif
 
     /* setup the pixel data format and the encoding of pixel data */

@@ -45,6 +45,8 @@ extern unsigned char *p_si;
 extern uint8_t AU_SEC_TYPE;	//default secure type(no authentication) for AutoGUI
 extern uint8_t AU_SHARED_FLAG; 	//default shared-flag(exclusive) for AutoGUI
 
+//the max version of RFB supported by vnc-server
+extern uint32_t server_major, server_minor;
 
 #ifndef TCP_ESTABLISHED 
 #define TCP_ESTABLISHED 1

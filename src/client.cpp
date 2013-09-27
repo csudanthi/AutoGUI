@@ -248,8 +248,18 @@ AU_BOOL InitToClient(uint32_t sockfd)
     uint32_t client_major, client_minor;
 
     /* send RFB proto version used by AutoGUI */
-    if( send(sockfd, AU_USED_VER_MSG, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
-        error(True, "ERROR: cannot send version massage");
+    if(server_minor == 8){
+        if( send(sockfd, AU_USED_VER_MSG_38, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
+            error(True, "ERROR: cannot send version massage");
+        }
+    }
+    else if(server_minor == 7){
+        if( send(sockfd, AU_USED_VER_MSG_37, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
+            error(True, "ERROR: cannot send version massage");
+        }
+    }
+    else{
+        error(False, "ERROR: server_minor should be 7 or 8");
     }
    
     /* parse the version msg received from client */
@@ -259,8 +269,8 @@ AU_BOOL InitToClient(uint32_t sockfd)
     if( sscanf(RfbProtoVersion, "RFB %03d.%03d\n", &client_major, &client_minor) != 2 ){
         error(False, "ERROR: not a valid vnc server");
     }
-    if(client_major != MajorVersion || client_minor != MinorVersion){
-        error(False, "ERROR: sorry, AutoGUI only support RFB v3.7 right now");
+    if(client_major != MajorVersion || (client_minor != MinorVersion && client_minor != MinorVersion + 1) ){
+        error(False, "ERROR: sorry, AutoGUI only support RFB v3.7 and v3.8 right now");
     }
 
     /* send security type message */
@@ -271,6 +281,14 @@ AU_BOOL InitToClient(uint32_t sockfd)
     /* read security type */
     retnum = recv(sockfd, cbuf_ptr, 1, 0);
     cbuf_ptr += retnum;
+
+    /* send the security result */
+    if(server_minor == 8){
+        if( send(sockfd, AU_SEC_RESULT, 4, 0) != 4 ){
+            error(True, "ERROR: cannot send security result massage");
+        }
+    }
+    
 
     /* read clientinit message */
     retnum =recv(sockfd, cbuf_ptr, 1, 0);

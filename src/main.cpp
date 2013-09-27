@@ -9,6 +9,9 @@ unsigned char *cbuf_ptr = client_buf;
 uint32_t retnum = 0;	//bytes read from socket
 uint32_t next_len = 0;	//the length will be received next, usually specified by the head-package
 
+//the max version of RFB supported by vnc-server
+uint32_t server_major, server_minor;
+
 ServerInitMsg si;
 unsigned char ConstName[] = "AutoGUI";
 unsigned char *desktopName = ConstName;

@@ -5,12 +5,15 @@
 
 
 //RFB proto version used by AutoGUI
-#define AU_USED_VER_MSG "RFB 003.007\n"
+#define AU_USED_VER_MSG_37 "RFB 003.007\n"
+#define AU_USED_VER_MSG_38 "RFB 003.008\n"
+
 #define RFBPROTOVER_SZ (12)	//length of RFB proto version message
 #define MajorVersion (3)
 #define MinorVersion (7)
 
 #define AU_SEC_TYPE_MSG "\1\1"
+#define AU_SEC_RESULT "\0\0\0\0"
 
 //Client to Server message type 
 #define rfbSetPixelFormat 0

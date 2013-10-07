@@ -25,7 +25,7 @@
 using namespace std;
 
 //#define DEBUG
-//#define ANALYZE_PKTS   //print out the packages which AutoGUI intercepted.
+#define ANALYZE_PKTS   //print out the packages which AutoGUI intercepted.
 //#define FORCE_UPDATE   //force the vnc-server update the framebuffer in non-incremental mode
 
 extern ofstream ClientToAU;	//file to write client input

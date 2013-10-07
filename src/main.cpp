@@ -23,16 +23,21 @@ uint8_t AU_SHARED_FLAG = 0; 	//default shared-flag(exclusive) for AutoGUI
 AU_BOOL ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)
 {
     uint32_t retnum, lentoread;
+    unsigned char *buf_ptr = ptr;
     if(!SocketConnected(sockfd)){
         return False;
     }
     while(len > 0){
-        lentoread = len > SZ_PER_OPT ? SZ_PER_OPT:len;
-        retnum = recv(sockfd, ptr, lentoread, 0);
+        lentoread = len < SZ_PER_OPT ? len:SZ_PER_OPT;
+        retnum = recv(sockfd, buf_ptr, lentoread, 0);
         if(retnum <= 0){
             error(True, "ERROR: [socket id:%d] recv: ", sockfd);
         }
+        buf_ptr += retnum;
         len -= retnum;
+    }
+    if(len != 0){
+        error(False, "ERROR: [ReadSocket:%d] read too much", sockfd);
     }
     return True;
 }
@@ -40,16 +45,21 @@ AU_BOOL ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)
 AU_BOOL WriteSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)
 {
     uint32_t retnum, lentowrite;
+    unsigned char *buf_ptr = ptr;
     if(!SocketConnected(sockfd)){
         return False;
     }
     while(len > 0){
-        lentowrite = len > SZ_PER_OPT ? SZ_PER_OPT:len;
-        retnum = send(sockfd, ptr, lentowrite, 0);
+        lentowrite = len < SZ_PER_OPT ? len:SZ_PER_OPT;
+        retnum = send(sockfd, buf_ptr, lentowrite, 0);
         if(retnum <= 0){
             error(True, "ERROR: [socket id:%d] send: ", sockfd);
         }
         len -= retnum;
+        buf_ptr += retnum;
+    }
+    if(len != 0){
+        error(False, "ERROR: [WriteSoocket:%d] write too much", sockfd);
     }
     return True;
 }

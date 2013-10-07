@@ -11,14 +11,14 @@ void WriteServerBuf()
 /* return True if writeback, otherwise return False */
 AU_BOOL CheckServerBuf(uint32_t used)
 {
-    if(used > CLIENT_BUF_SZ - 200){
+    if(used > SERVER_BUF_SZ - 200){
         WriteServerBuf();
         return True;
     }
     return False;
 }
 
-
+unsigned char checkbuf[8*1024*1024];
 /* return False if socketset are closed by vnc-server or vnc-client, otherwise return True */
 AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
 {
@@ -39,23 +39,22 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
     stc_msg_type = *((uint8_t *)sbuf_ptr);
 
     #ifdef DEBUG
-//    cout << "msg_type:";
-//    hexdump(sbuf_ptr, 1);
+    cout << "msg_type:";
+    hexdump(sbuf_ptr, 1);
     #endif
 
-    /* AutoGUI will record all the data received from vnc-server and will forward the necessary messages */
+    // AutoGUI will record all the data received from vnc-server and will forward the necessary messages 
     switch(stc_msg_type){
         case rfbFramebufferUpdate:
-            #ifdef ANALYZE_PKTS
-            cout << "#analyze packages# S-->C:rfbFramebufferUpdate           [Forward]" << endl;
-            #endif
             //read and forward framebufferupdate head
             ReadSocket(s_sockset->SocketToServer, sbuf_ptr + 1, HSZ_FRAME_BUFFER_UPDATE - 1);
             rect_num = Swap16(*((uint16_t *)(sbuf_ptr + 2)));
+            #ifdef ANALYZE_PKTS
+            cout << "#analyze packages# S-->C:rfbFramebufferUpdate           [Forward]" << endl;
+            #endif
             #ifdef DEBUG
-            //cout << "[STCMsg]: " << dec << (int)stc_msg_type << endl;
-           // cout << "[STCMsg] rect_num: " << dec << (int)rect_num << endl;
-            hexdump(sbuf_ptr, HSZ_FRAME_BUFFER_UPDATE);
+            cout << "[STCMsg]: " << dec << (int)stc_msg_type << endl;
+            cout << "[STCMsg] rect_num: " << dec << (int)rect_num << endl;
             #endif
             if( !WriteSocket(s_sockset->SocketToClient, sbuf_ptr, HSZ_FRAME_BUFFER_UPDATE) ){
                 return False;
@@ -80,12 +79,7 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
                     cout << "Rect too large: " << dec << (int)rect.width << "x" << (int)rect.height << "at (" << (int)rect.x_pos << ", " << (int)rect.y_pos << ")" << endl;
                 }
                 #ifdef ANALYZE_PKTS
-                //cout << "         rect: " << dec << (int)rect.x_pos << "," << (int)rect.y_pos;
-                //cout << dec << "," << (int)rect.width << "," << (int)rect.height << endl;
-                #endif
-                #ifdef DEBUG
-               // cout << "width and heigth: " << dec << (int)rect.width << ":" << (int)rect.height << endl;
-               // cout << "bitsPerPixel: " << dec << (int)si.format.bitsPerPixel << endl;
+                //cout << "si.format.bitsPerPixel[used]: " << dec << (int)si.format.bitsPerPixel << endl;
                 #endif
                 rect.encoding_type = Swap32(rect.encoding_type);
 
@@ -96,10 +90,10 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
                  *          unless the client asks for other encoding types."     *
                  *  So, AutoGUI only need to handle raw encoding Pixel data.      *
                  ******************************************************************/
-                if(rect.encoding_type != rfbEncodingRaw){
+                if((int32_t)rect.encoding_type != rfbEncodingRaw){
                     error(False, "ERROR: AutoGUI only support rfbEncodingRaw ");
                 }
-                rect_size = (rect.width*rect.height*si.format.bitsPerPixel)/8;
+                rect_size = rect.width*rect.height*(si.format.bitsPerPixel/8);
                 #ifdef DEBUG
                 cout << "     [STCMsg] rect_size: " << dec << (int)rect_size << endl;
                 #endif
@@ -116,10 +110,10 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
         case rfbSetColourMapEntries: 
             #ifdef ANALYZE_PKTS
             cout << "#analyze packages# S-->C:rfbSetColourMapEntries           [Forward]" << endl;
-            #endif
             if(si.format.trueColour){
                 perror("The vnc-server should use trueColour");
             }
+            #endif
             //read and forward setcolourmapentries msg head
             ReadSocket(s_sockset->SocketToServer, sbuf_ptr + 1, HSZ_SET_COLOUR_MAP_ENTRIES - 1);
             colour_cnt = *((uint16_t *)(sbuf_ptr + 4));
@@ -168,7 +162,8 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
             error(False, "ERROR: [HandleSTCMsg] This msg-type(%d) should not appear.", stc_msg_type);
     }
     #ifdef DEBUG
-   // hexdump(server_buf, (unsigned int)(sbuf_ptr - server_buf));
+    cout << "the data in server_buf:" << endl;
+    hexdump(server_buf, (unsigned int)(sbuf_ptr - server_buf));
     #endif
     return True;
 }
@@ -231,7 +226,11 @@ void SetFormatAndEncodings()
 {
     /* This function is empty because we wish our record file can be used by 
      * all the vnc-server, including gem5 simulator. 
-     * So, AutoGUI won't send/forward any "SetPixelFormat" or "SetEncodings" messages to vnc-server.
+     * So, AutoGUI won't send/forward any "SetEncodings" messages to vnc-server.
+     * 
+     * But AutoGUI will forward the "SetPixelFormat" message to vnc-server,
+     * because the once the vnc-client set a "SetPixelFormat" message, 
+     * it will parse the pixel data by the format specified in the "SetPixelFormat" message.
      */
 }
 
@@ -271,6 +270,7 @@ void InitSI(uint32_t sockfd)
     #ifdef DEBUG
     cout << "desktopName:" << desktopName << endl;
     cout << "retnum: " << dec << retnum << "     si.nameLength:" << si.nameLength << endl;
+    cout << "the data in server_buf:" << endl;
     hexdump(server_buf, (unsigned int)(sbuf_ptr - server_buf));
     #endif
 }
@@ -316,8 +316,7 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     memcpy(RfbProtoVersion, sbuf_ptr, RFBPROTOVER_SZ);
     sbuf_ptr += retnum;
     #ifdef DEBUG
-   // hexdump((unsigned char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
-   // cout << "The RFB proto version of server is:" << endl << RfbProtoVersion << endl;
+    cout << "The RFB proto version of server is:" << endl << RfbProtoVersion << endl;
     #endif
 /*
 */
@@ -357,9 +356,7 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
         error(False, "ERROR: there is not security-type provided by server");
     }
     sbuf_ptr += retnum;
-    #ifdef DEBUG
-    //hexdump((unsigned char *)server_buf, (uint32_t)(sbuf_ptr - server_buf));
-    #endif
+
     /* send security type */
     if(send(sockfd, (char *)&AU_SEC_TYPE, 1, 0) != 1){
         error(True, "ERROR: cannot send security type");
@@ -375,6 +372,7 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
             error(False, "ERROR: cannot use none security type");
         }
         #ifdef DEBUG
+        cout << "the check info received from vnc-server:" << endl;
         hexdump((unsigned char *)sbuf_ptr, 4);
         #endif
         sbuf_ptr += retnum;
@@ -401,8 +399,8 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
     /* initialize si */
     InitSI(sockfd);
     
-    PrintPixelFormat(&si.format);
     #ifdef DEBUG
+    PrintPixelFormat(&si.format);
     #endif
 
     /* setup the pixel data format and the encoding of pixel data */

@@ -44,7 +44,7 @@
 
 
 //the max length can be read/write socket once
-#define SZ_PER_OPT (2*1024*1024)
+#define SZ_PER_OPT (4*1024*1024)
 
 //Pixel date encoding type
 #define rfbEncodingRaw 0

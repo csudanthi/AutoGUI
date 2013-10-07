@@ -45,10 +45,21 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
     switch(cts_msg_type){
         case rfbSetPixelFormat: 
             #ifdef ANALYZE_PKTS
-            cout << "#analyze packages# C-->S:rfbSetPixelFormat" << endl;
+            cout << "#analyze packages# C-->S:rfbSetPixelFormat              [Forward]" << endl;
             #endif
             //read setpixelformat msg
             ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_SET_PIXEL_FORMAT - 1);
+            
+
+            /***********************************************************************
+             *    This msg must sent to vnc-server,                                *
+             *    because the vnc-client will decode the pixel data by this format  *
+             ***********************************************************************/
+            si.format.bitsPerPixel = (*(uint8_t *)(cbuf_ptr + 4));
+            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_SET_PIXEL_FORMAT)){
+                return False;
+            }
+
             cbuf_ptr += HSZ_SET_PIXEL_FORMAT;
 
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
@@ -293,9 +304,6 @@ AU_BOOL InitToClient(uint32_t sockfd)
     /* read clientinit message */
     retnum =recv(sockfd, cbuf_ptr, 1, 0);
     cbuf_ptr += retnum;
-    #ifdef DEBUG
-   // hexdump(client_buf, (uint32_t)(cbuf_ptr - client_buf));
-    #endif 
  
     /* send serverinit message */
     p_si[SZ_SERVER_INIT_MSG - 1] = 7;

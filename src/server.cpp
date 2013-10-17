@@ -18,7 +18,33 @@ AU_BOOL CheckServerBuf(uint32_t used)
     return False;
 }
 
-unsigned char checkbuf[8*1024*1024];
+/* update the data in CurPixelData */
+void UpdatePixelData(RectUpdate rect, uint8_t BytesPerPixel)
+{
+	uint16_t i, j;
+	uint32_t mask;
+	unsigned char *tmp_sbuf_ptr = sbuf_ptr;
+	switch(BytesPerPixel){
+		case 1:
+			mask = 0xff000000;
+			break;
+		case 2:
+			mask = 0xffff0000;
+			break;
+		case 4:
+			mask = 0xffffffff;
+			break;
+		default:
+			error(False, "bitsPerPixel should be 8/16/32 only");
+	}
+	for(i = rect.x_pos; i < rect.x_pos + rect.width; i++){
+		for(j = rect.y_pos; j < rect.y_pos + rect.height; j++){
+			CurPixelData[i][j] = ( ( *((uint32_t *)tmp_sbuf_ptr) ) & mask );
+			tmp_sbuf_ptr += BytesPerPixel;
+		}
+	}
+}
+
 /* return False if socketset are closed by vnc-server or vnc-client, otherwise return True */
 AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
 {
@@ -49,9 +75,11 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
             //read and forward framebufferupdate head
             ReadSocket(s_sockset->SocketToServer, sbuf_ptr + 1, HSZ_FRAME_BUFFER_UPDATE - 1);
             rect_num = Swap16(*((uint16_t *)(sbuf_ptr + 2)));
-            #ifdef ANALYZE_PKTS
-            cout << "#analyze packages# S-->C:rfbFramebufferUpdate           [Forward]" << endl;
-            #endif
+
+            pthread_mutex_lock(&mutex);
+            log << "#analyze packages# S-->C:rfbFramebufferUpdate           [Forward]" << endl;
+            pthread_mutex_unlock(&mutex);
+
             #ifdef DEBUG
             cout << "[STCMsg]: " << dec << (int)stc_msg_type << endl;
             cout << "[STCMsg] rect_num: " << dec << (int)rect_num << endl;
@@ -78,9 +106,11 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
                 if( (rect.x_pos + rect.width > si.framebufferWidth) || (rect.y_pos + rect.height > si.framebufferHeight) ){
                     cout << "Rect too large: " << dec << (int)rect.width << "x" << (int)rect.height << "at (" << (int)rect.x_pos << ", " << (int)rect.y_pos << ")" << endl;
                 }
-                #ifdef ANALYZE_PKTS
-                //cout << "si.format.bitsPerPixel[used]: " << dec << (int)si.format.bitsPerPixel << endl;
-                #endif
+
+				pthread_mutex_lock(&mutex);
+				log << "[STCMsg] Rectagle position: " << dec << "[id:" << i << "]"<< (int)rect.width << "x" << (int)rect.height << " at (" << (int)rect.x_pos << ", " << (int)rect.y_pos << ")" << endl;
+                log << "[STCMsg] si.format.bitsPerPixel[used]: " << dec << (int)si.format.bitsPerPixel << endl;
+				pthread_mutex_unlock(&mutex);
                 rect.encoding_type = Swap32(rect.encoding_type);
 
                 /******************************************************************
@@ -101,6 +131,11 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
               
                 // read and forward the rect pixel data
                 ReadSocket(s_sockset->SocketToServer, sbuf_ptr, rect_size);
+
+				pthread_mutex_lock(&mutex);
+				UpdatePixelData(rect, si.format.bitsPerPixel/8);	//update CurPixelData
+				pthread_mutex_unlock(&mutex);
+
                 if( !WriteSocket(s_sockset->SocketToClient, sbuf_ptr, rect_size) ){
                     return False;
                 }
@@ -108,12 +143,13 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
             }
             break;
         case rfbSetColourMapEntries: 
-            #ifdef ANALYZE_PKTS
-            cout << "#analyze packages# S-->C:rfbSetColourMapEntries           [Forward]" << endl;
+            pthread_mutex_lock(&mutex);
+            log << "#analyze packages# S-->C:rfbSetColourMapEntries           [Forward]" << endl;
+            pthread_mutex_unlock(&mutex);
+
             if(si.format.trueColour){
-                perror("The vnc-server should use trueColour");
+                perror("This message type[SetColourMap] should not appear while using trueColour.");
             }
-            #endif
             //read and forward setcolourmapentries msg head
             ReadSocket(s_sockset->SocketToServer, sbuf_ptr + 1, HSZ_SET_COLOUR_MAP_ENTRIES - 1);
             colour_cnt = *((uint16_t *)(sbuf_ptr + 4));
@@ -133,29 +169,25 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
             sbuf_ptr += colour_len;
             break;
         case rfbBell:
-            #ifdef ANALYZE_PKTS
-            cout << "#analyze packages# S-->C:rfbBell" << endl;
-            #endif
+            pthread_mutex_lock(&mutex);
+            log << "#analyze packages# S-->C:rfbBell" << endl;
+            pthread_mutex_unlock(&mutex);
+
             sbuf_ptr++;
             break;
         case rfbServerCutText:
-            #ifdef ANALYZE_PKTS
-            cout << "#analyze packages# S-->C:rfbServerCutText                 [Forward]" << endl;
-            #endif
-            //read and forward cuttext msg head
+            pthread_mutex_lock(&mutex);
+            log << "#analyze packages# S-->C:rfbServerCutText                 " << endl;
+            pthread_mutex_unlock(&mutex);
+
+			perror("This message type[rfbServerCutText] should not appear.");
+            //read cuttext msg head
             ReadSocket(s_sockset->SocketToServer, sbuf_ptr + 1, HSZ_SERVER_CUT_TEXT - 1);
             text_len = Swap32(*((uint32_t *)(sbuf_ptr + 4)));
-            if( !WriteSocket(s_sockset->SocketToClient, sbuf_ptr, HSZ_SERVER_CUT_TEXT) ){
-                return False;
-            }
             sbuf_ptr += HSZ_SERVER_CUT_TEXT;
-
             CheckServerBuf((uint32_t)(sbuf_ptr - server_buf) + text_len);
-            //read and forward cuttext msg data
+            //read cuttext msg data
             ReadSocket(s_sockset->SocketToServer, sbuf_ptr, text_len);
-            if( !WriteSocket(s_sockset->SocketToClient, sbuf_ptr, text_len) ){
-                return False;
-            }
             sbuf_ptr += text_len;
             break;
         default:
@@ -332,7 +364,9 @@ AU_BOOL InitToServer(struct hostent *server, uint32_t portno, uint32_t sockfd)
         if( send(sockfd, AU_USED_VER_MSG_38, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){
             error(True, "ERROR: cannot send version massage");
         }
-        cout << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG_38 <<endl;
+        pthread_mutex_lock(&mutex);
+        log << "The RFB version used by AutoGUI is :" << AU_USED_VER_MSG_38 <<endl;
+        pthread_mutex_unlock(&mutex);
     }
     else if(server_minor == 7){
         if( send(sockfd, AU_USED_VER_MSG_37, RFBPROTOVER_SZ, 0) != RFBPROTOVER_SZ ){

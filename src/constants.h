@@ -49,10 +49,24 @@
 //Pixel date encoding type
 #define rfbEncodingRaw 0
 
+//Key names and Keysym values
+#ifndef XK_Control_L
+#define XK_Control_L  	0xffe3 
+#define XK_Control_R 	0xffe4
+#define XK_c			0x00063
+#define XK_d			0x00064
+#define XK_i			0x00069
+#define XK_q			0x00071
+#define XK_s			0x00073
+#endif
 
+//Default size of captured rectangle
+#define RECT_X		(20)
+#define RECT_Y		(40)
+#define RECT_CX		(780)
+#define RECT_CY		(460)
 
-
-
+#define BASE_PATH "framein/"
 
 
 

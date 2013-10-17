@@ -62,7 +62,23 @@ typedef struct _ServerInitMsg{
 }ServerInitMsg;
 #define SZ_SERVER_INIT_MSG (8 + SZ_PIXEL_FORMAT)
 
-
+/* Types of packets that can be received/write from/to capture file */
+enum EventPkt{
+	rfbPkt,
+	timewaitPkt,
+	timesyncPkt,
+	framewaitPkt,
+	ddelayPkt,
+	chkpointPkt,
+	exitPkt
+};
+#define RFB_MSG_HEAD "\0"
+#define TIMEWAIT_MSG_HEAD "\1"
+#define TIMESYNC_MSG_HEAD "\2"
+#define FRAMEWAIT_MSG "\3"
+#define DDELAY_MSG "\4"
+#define CHECKPOINT_MSG "\5"
+#define EXIT_MSG "\6"
 
 /* main.cpp */
 void error(AU_BOOL perror_en, const char* format, ...);
@@ -81,6 +97,7 @@ void SetFormatAndEncodings();
 void *STCMainLoop(void *sockset);
 void WriteServerBuf();
 AU_BOOL HandleSTCMsg(SocketSet *s_sockset);
+void UpdatePixelData(RectUpdate rect, uint8_t BytesPerPixel);
 
 /* client.cpp */
 AU_BOOL ListenTcpPort(uint32_t au_port, uint32_t SockListen);
@@ -90,3 +107,11 @@ void *CTSMainLoop(void *sockset);
 void WriteClientBuf();
 AU_BOOL ChechClientBuf(uint32_t used);
 AU_BOOL HandleCTSMsg(SocketSet *c_sockset);
+AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed, AU_BOOL cur_key_state);
+void CaptureFrame();
+void WriteThreshold();
+void InsertFrameWaitPkt();
+void InsertTimeWaitPkt();
+void InsertSyncPkt();
+uint32_t FrameCompare();
+void InitThreshold();

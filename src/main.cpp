@@ -1,24 +1,46 @@
 #include "main.h"
 
-ofstream ClientToAU;	//file to write client input date
+ofstream ClientToAU;	//file to write client input data
 ofstream ServerToAU;	//file to write server output data
 unsigned char server_buf[SERVER_BUF_SZ];	//buffer to hold server output data
 unsigned char client_buf[CLIENT_BUF_SZ];	//buffer to hold client input data
 unsigned char *sbuf_ptr = server_buf;
 unsigned char *cbuf_ptr = client_buf;
-uint32_t retnum = 0;	//bytes read from socket
-uint32_t next_len = 0;	//the length will be received next, usually specified by the head-package
+uint32_t retnum = 0;		//bytes read from socket
+uint32_t next_len = 0;		//the length will be received next, usually specified by the head-package
+struct timeval FrameBegin, FrameEnd;
 
-//the max version of RFB supported by vnc-server
-uint32_t server_major, server_minor;
+uint8_t button_mask = 0; 	//the mask state of pointerevent.
+AU_BOOL CtrlPressed = False;
+AU_BOOL Recording = False;
+AU_BOOL Replaying = False;
+uint32_t EventCnt; 	
+uint32_t FrameCnt; 	
+uint32_t CurPixelData[RECT_CX+20][RECT_CY+20];	//current pixel data in default rectangle size
+uint32_t CapPixelData[RECT_CX+20][RECT_CY+20];	//captured pixel data in default rectangle size
+
+uint32_t server_major, server_minor;			//the max version of RFB supported by vnc-server
 
 ServerInitMsg si;
 unsigned char ConstName[] = "AutoGUI";
 unsigned char *desktopName = ConstName;
 unsigned char *p_si = NULL;
 
-uint8_t AU_SEC_TYPE = 1;	//default secure type(no authentication) for AutoGUI
+uint8_t AU_SEC_TYPE = 1;		//default secure type(no authentication) for AutoGUI
 uint8_t AU_SHARED_FLAG = 0; 	//default shared-flag(exclusive) for AutoGUI
+AU_BOOL FirstInput = False;	//label for the first input while recording/replaying
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+ofstream log;				//file to write log info for debug
+ofstream RecordFile;		//file to write ultimate recorded data for replayer
+ifstream ReplayFile;		//file to read ultimate recorded data for replayer
+ofstream PixelThres;		//file to write threshold for each pixel data
+ifstream PixelThresR;		//file to read  threshold for each pixel data
+ofstream RectFramePixel;	//file to write pixel data in every ractangle frame
+ifstream RectFramePixelR;	//file to read  pixel data in every ractangle frame
+char pathRectFramePixel[1024];
+float *thres_list = NULL;
+
 
 AU_BOOL ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)
 {
@@ -184,8 +206,16 @@ int main(int argc, char *argv[])
         error(True, "ERROR: cannot open socket");
     }
 
-    ClientToAU.open("UsrIn.pkts");
-    ServerToAU.open("VncOut.pkts");
+	if( mkdir("./framein", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) != 0 && errno != EEXIST){
+		error(True, "can not create base_path folder(framein)");
+	}
+    ClientToAU.open("./framein/UsrIn.pkts");
+    ServerToAU.open("./framein/VncOut.pkts");
+    log.open("./framein/log.txt");
+    if( !ClientToAU.is_open() || !ServerToAU.is_open() || !log.is_open() ){
+		error(True, "Cannot open framein files");
+	}
+	
 
     // Initialize the connection between AutoGUI and VNC-Server, include handshakes
     if ( !InitToServer(server, server_port, SockToServer) ){
@@ -240,7 +270,7 @@ int main(int argc, char *argv[])
     cout << "             STC Main Loop exit" << endl << endl;
 
     if( (((AU_BOOL *)c_return)) && (((AU_BOOL *)s_return)) ){
-        cout << "All tasks have finished." << endl;
+        log << "All tasks have finished." << endl;
     }
    
      
@@ -248,6 +278,7 @@ int main(int argc, char *argv[])
     ClientToAU.write((const char*)client_buf, (uint32_t)(cbuf_ptr - client_buf));
     ClientToAU.close();
     ServerToAU.close();
+    log.close();
 
     return 0;
 }

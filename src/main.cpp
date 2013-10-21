@@ -16,8 +16,9 @@ AU_BOOL Recording = False;
 AU_BOOL Replaying = False;
 uint32_t EventCnt; 	
 uint32_t FrameCnt; 	
-uint32_t CurPixelData[RECT_CX+20][RECT_CY+20];	//current pixel data in default rectangle size
-uint32_t CapPixelData[RECT_CX+20][RECT_CY+20];	//captured pixel data in default rectangle size
+uint32_t CurPixelData[RECT_CY+20][RECT_CX+20];	//current pixel data in default rectangle size
+uint32_t CapPixelData[RECT_CY+20][RECT_CX+20];	//captured pixel data in default rectangle size
+AU_BOOL UpdateFlag = False;						//update flag for CurPixelData
 
 uint32_t server_major, server_minor;			//the max version of RFB supported by vnc-server
 
@@ -40,6 +41,8 @@ ofstream RectFramePixel;	//file to write pixel data in every ractangle frame
 ifstream RectFramePixelR;	//file to read  pixel data in every ractangle frame
 char pathRectFramePixel[1024];
 float *thres_list = NULL;
+uint32_t thres_list_len;
+float RfbFrameThres = 0.0;	//global threshold used by function:TryMatchFrame
 
 
 AU_BOOL ReadSocket(uint32_t sockfd, unsigned char *ptr, uint32_t len)

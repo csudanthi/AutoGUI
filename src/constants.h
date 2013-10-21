@@ -30,6 +30,7 @@
 #define HSZ_KEY_EVENT 8
 #define HSZ_POINTER_EVENT 6
 #define HSZ_CLIENT_CUT_TEXT 8
+#define HSZ_RFB_MSG_MAX 20
 
 //Server to Client message type
 #define rfbFramebufferUpdate 0

@@ -33,8 +33,9 @@ extern unsigned char server_buf[SERVER_BUF_SZ];	//buffer to hold server output d
 extern unsigned char client_buf[CLIENT_BUF_SZ];	//buffer to hold client input data
 extern unsigned char *sbuf_ptr;
 extern unsigned char *cbuf_ptr;
-extern uint32_t CurPixelData[RECT_CX+20][RECT_CY+20];	//current pixel data in default rectangle size
-extern uint32_t CapPixelData[RECT_CX+20][RECT_CY+20];	//captured pixel data in default rectangle size
+extern uint32_t CurPixelData[RECT_CY+20][RECT_CX+20];	//current pixel data in default rectangle size
+extern uint32_t CapPixelData[RECT_CY+20][RECT_CX+20];	//captured pixel data in default rectangle size
+extern AU_BOOL UpdateFlag;
 
 extern uint32_t retnum;		//bytes raed from socket
 extern uint32_t next_len;	//the length will be received next
@@ -48,16 +49,18 @@ extern AU_BOOL Replaying;   //flag of whether AutoGUI is replaying or not
 extern uint32_t EventCnt;
 extern uint32_t FrameCnt; 	
 
-extern pthread_mutex_t mutex; 	//mutex variable
-extern ofstream log;			//file to write log info for debug
-extern ofstream RecordFile;		//file to write ultimate recorded data for replayer
-extern ifstream ReplayFile;		//file to read  ultimate recorded data for replayer
-extern ofstream PixelThres;		//file to write threshold for each pixel data
-extern ifstream PixelThresR;	//file to read  threshold for each pixel data
-extern ofstream RectFramePixel;	//file to write pixel data in every ractangle frame
-extern ifstream RectFramePixelR;//file to read pixel data in every ractangle frame
+extern pthread_mutex_t mutex; 	
+extern ofstream log;			
+extern ofstream RecordFile;		
+extern ifstream ReplayFile;		
+extern ofstream PixelThres;		
+extern ifstream PixelThresR;	
+extern ofstream RectFramePixel;	
+extern ifstream RectFramePixelR;
 extern char pathRectFramePixel[1024];
 extern float *thres_list;
+extern uint32_t thres_list_len;
+extern float RfbFrameThres;	
 
 extern ServerInitMsg si;		//initialization message received from vnc-server
 extern unsigned char *desktopName;

@@ -37,8 +37,8 @@ void UpdatePixelData(RectUpdate rect, uint8_t BytesPerPixel)
 		default:
 			error(False, "bitsPerPixel should be 8/16/32 only");
 	}
-	for(i = rect.x_pos; i < rect.x_pos + rect.width; i++){
-		for(j = rect.y_pos; j < rect.y_pos + rect.height; j++){
+	for(i = rect.y_pos; i < rect.y_pos + rect.height; i++){
+		for(j = rect.x_pos; j < rect.x_pos + rect.width; j++){
 			CurPixelData[i][j] = ( ( *((uint32_t *)tmp_sbuf_ptr) ) & mask );
 			tmp_sbuf_ptr += BytesPerPixel;
 		}
@@ -89,6 +89,7 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
             }
             sbuf_ptr += HSZ_FRAME_BUFFER_UPDATE;
 
+			pthread_mutex_lock(&mutex);		//once a update packet received, lock up to update CurPixelData
             for(i = 0; i < rect_num; i++){
                 //read and forward rect_update head
                 ReadSocket(s_sockset->SocketToServer, sbuf_ptr, SZ_RECT_UPDATE);
@@ -107,10 +108,8 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
                     cout << "Rect too large: " << dec << (int)rect.width << "x" << (int)rect.height << "at (" << (int)rect.x_pos << ", " << (int)rect.y_pos << ")" << endl;
                 }
 
-				pthread_mutex_lock(&mutex);
 				log << "[STCMsg] Rectagle position: " << dec << "[id:" << i << "]"<< (int)rect.width << "x" << (int)rect.height << " at (" << (int)rect.x_pos << ", " << (int)rect.y_pos << ")" << endl;
                 log << "[STCMsg] si.format.bitsPerPixel[used]: " << dec << (int)si.format.bitsPerPixel << endl;
-				pthread_mutex_unlock(&mutex);
                 rect.encoding_type = Swap32(rect.encoding_type);
 
                 /******************************************************************
@@ -132,15 +131,14 @@ AU_BOOL HandleSTCMsg(SocketSet * s_sockset)
                 // read and forward the rect pixel data
                 ReadSocket(s_sockset->SocketToServer, sbuf_ptr, rect_size);
 
-				pthread_mutex_lock(&mutex);
 				UpdatePixelData(rect, si.format.bitsPerPixel/8);	//update CurPixelData
-				pthread_mutex_unlock(&mutex);
 
                 if( !WriteSocket(s_sockset->SocketToClient, sbuf_ptr, rect_size) ){
                     return False;
                 }
                 sbuf_ptr += rect_size;
             }
+			pthread_mutex_unlock(&mutex);
             break;
         case rfbSetColourMapEntries: 
             pthread_mutex_lock(&mutex);
@@ -215,9 +213,10 @@ void *STCMainLoop(void *sockset)
     WriteServerBuf();
 
     // Enter Server-To-Client Main Loop
-    #ifdef DEBUG
-    cout << "Enter Server-To-Client Main Loop" << endl;
-    #endif
+	pthread_mutex_lock(&mutex);
+    log << "Enter Server-To-Client Main Loop" << endl;
+	pthread_mutex_unlock(&mutex);
+
     while(true){
         //Check the vnc-client is connect or not
         if(!SocketConnected(s_sockset->SocketToClient)){

@@ -21,7 +21,7 @@ AU_BOOL CheckClientBuf(uint32_t used)
 /* Initialize threshold list */
 void InitThreshold()
 {
-    uint16_t i, thres_list_len;
+    uint16_t i;
 	string line;
 	thres_list_len = 0;
 
@@ -31,7 +31,7 @@ void InitThreshold()
 	}
 	//compute thres_list_len
 	while(getline(PixelThresR, line)){
-		thres_list_len ++;
+		thres_list_len++;
 	}
 	PixelThresR.close();
     PixelThresR.open("./framein/fb.thres");
@@ -46,17 +46,327 @@ void InitThreshold()
 	if(thres_list == NULL){
 		error(True, "Cannot malloc memory for thres_list");
 	}
-	memset(thres_list, 0, thres_list_len);
+	memset(thres_list, 0, thres_list_len*sizeof(float));
 
 	for(i = 0; i < thres_list_len; i++){
 		PixelThresR >> thres_list[i];
 	}	
+	PixelThresR.close();
 	pthread_mutex_lock(&mutex);
 	log << "Initialize thres_list. len = " << dec << (int)thres_list_len << endl;
 	for(i = 0; i < thres_list_len; i++){
 		log << dec << (float)thres_list[i] << endl;
 	}
 	pthread_mutex_unlock(&mutex);
+}
+
+/* Process a single RFB packet read from ReplayFile
+ * There following message type are supported now --zhongbin 
+ */
+void HandleRfbPkt(SocketSet *c_sockset)
+{
+	uint8_t rfb_msg_type;
+	unsigned char tmp_msg_buf[HSZ_RFB_MSG_MAX];
+	memset(tmp_msg_buf, 0, HSZ_RFB_MSG_MAX);
+
+	ReplayFile.read((char *)&tmp_msg_buf[0], 1);
+	if(!ReplayFile.good()){
+		error(False, "ERROR: [HandleRfbPkt] cannot read rfb_msg_type");
+	}
+	rfb_msg_type = tmp_msg_buf[0];
+	switch(rfb_msg_type){
+		case rfbSetPixelFormat:
+			pthread_mutex_lock(&mutex);
+			log << "[Replaying -> HandleRfbPkt] rfbSetPixelFormat message" << endl;
+			pthread_mutex_unlock(&mutex);
+			ReplayFile.read((char *)&tmp_msg_buf[1], HSZ_SET_PIXEL_FORMAT - 1);
+			WriteSocket(c_sockset->SocketToServer, tmp_msg_buf, HSZ_SET_PIXEL_FORMAT);
+			break;
+		case rfbFramebufferUpdateRequest:
+			pthread_mutex_lock(&mutex);
+			log << "[Replaying -> HandleRfbPkt] rfbFramebufferUpdateRequest message" << endl;
+			pthread_mutex_unlock(&mutex);
+			ReplayFile.read((char *)&tmp_msg_buf[1], HSZ_FRAME_BUFFER_UPDATE_REQUEST - 1);
+			WriteSocket(c_sockset->SocketToServer, tmp_msg_buf, HSZ_FRAME_BUFFER_UPDATE_REQUEST);
+			break;
+		case rfbKeyEvent:
+			pthread_mutex_lock(&mutex);
+			log << "[Replaying -> HandleRfbPkt] rfbKeyEvent message" << endl;
+			pthread_mutex_unlock(&mutex);
+			ReplayFile.read((char *)&tmp_msg_buf[1], HSZ_KEY_EVENT - 1);
+			WriteSocket(c_sockset->SocketToServer, tmp_msg_buf, HSZ_KEY_EVENT);
+			cout << "[Replaying -> HandleRfbPkt] rfbKeyEvent message" << endl;
+			break;
+		case rfbPointerEvent:
+			pthread_mutex_lock(&mutex);
+			log << "[Replaying -> HandleRfbPkt] rfbPointerEvent message" << endl;
+			pthread_mutex_unlock(&mutex);
+			ReplayFile.read((char *)&tmp_msg_buf[1], HSZ_POINTER_EVENT - 1);
+			WriteSocket(c_sockset->SocketToServer, tmp_msg_buf, HSZ_POINTER_EVENT);
+			break;
+		default:
+			error(False, "ERROR: [HandleRfbPkt] This rfb_msg_type(%d) should not appear.", rfb_msg_type);
+	}
+}
+
+/* assignment RfbFrameThres from thres_list */
+void GetThreshold()
+{
+	if(FrameCnt > thres_list_len ){
+		cout << "FrameCnt: " << dec << (int)FrameCnt << " " << sizeof(thres_list)/sizeof(float) << endl;
+		error(False, "ERROR: [GetThreshold] FrameCnt should less then length of thres_list");
+	}
+	RfbFrameThres = thres_list[FrameCnt];
+	
+	pthread_mutex_lock(&mutex);
+	log << "[Replaying -> GetThreshold] RfbFrameThres = " << dec << RfbFrameThres << endl;
+	pthread_mutex_unlock(&mutex);
+}
+
+/* assignment CapPixelData by read data from RectFramePixelR */
+void GetTargetFrame()
+{
+	unsigned char bmp_head[54];
+
+	memset(CapPixelData[0], 0, sizeof(CapPixelData));
+	memset(bmp_head, 0, sizeof(bmp_head));
+
+	sprintf(pathRectFramePixel, "framein/fb%06u_raw.bmp", FrameCnt);
+	cout << "      pathRectFramePixel: " << pathRectFramePixel << endl;
+	RectFramePixelR.open(pathRectFramePixel);
+	if(!RectFramePixelR.is_open()){
+		error(False, "ERROR: [Replaying -> GetTargetFrame] can not open file:%s", pathRectFramePixel);
+	}
+	RectFramePixelR.read((char *)bmp_head, sizeof(bmp_head));	//read .bmp file head
+	RectFramePixelR.read((char *)CapPixelData[0], sizeof(CapPixelData));
+	if( (RectFramePixelR.rdstate() & (RectFramePixelR.fail() | RectFramePixelR.bad())) != 0){
+		error(True, "[Replaying -> GetTargetFrame] there is something wrong when reading replaying file");
+	}
+
+	RectFramePixelR.close();
+
+	pthread_mutex_lock(&mutex);
+	log << "[Replaying -> GetTargetFrame] RfbFrameThres = " << dec << RfbFrameThres << "  FrameCnt = " << (int)FrameCnt << endl;
+	pthread_mutex_unlock(&mutex);
+}
+
+/* Compare the diff between CapPixelData and CurPixelData
+ * Return True is matched(True), otherwise return un-matched(False) */
+
+AU_BOOL TryMatchFrame()
+{
+    float threshold;
+    uint32_t sum_px, num_px_diff;
+    sum_px = (RECT_CX - RECT_X) * (RECT_CY - RECT_Y);
+
+	#ifdef DEBUG
+	static uint32_t cnt = 0;
+	INIT_BMP(tmp2);
+	char tmppath[1024];
+	memset(tmppath, 0, sizeof(tmppath));
+	ofstream tmp;
+	#endif
+
+    pthread_mutex_lock(&mutex);
+    log << "[Replaying -> TryMatchFrame] Compare the diff between CapPixelData and CurPixelData(framecnt=" << dec << (int)FrameCnt << ")"  << endl;
+    num_px_diff = FrameCompare();
+    threshold = 1 - ((num_px_diff*1.0)/sum_px);
+    log << "   threshold = " << setprecision(3) << threshold << endl;
+	log << "   num_px_diff = " << dec << (int)num_px_diff << "  sum_px = " << (int)sum_px << endl;
+    pthread_mutex_unlock(&mutex);
+
+	//the num_px_diff is bigger then expected
+	if(threshold < RfbFrameThres){
+		//write .bmp file to record the matching process
+		#ifdef DEBUG
+		sprintf(tmppath, "tmp%06u.bmp", cnt*2);
+		tmp.open(tmppath);
+		pthread_mutex_lock(&mutex);
+		tmp.write((char *)&tmp2, sizeof(tmp2));
+		tmp.write((char *)CurPixelData[0], sizeof(CurPixelData));
+		pthread_mutex_unlock(&mutex);
+		tmp.close();
+		#endif
+		return False;
+	}
+	else{
+		//write .bmp file to record the matching process
+		#ifdef DEBUG
+		sprintf(tmppath, "tmp%06u.bmp", cnt*2+1);
+		tmp.open(tmppath);
+		pthread_mutex_lock(&mutex);
+		tmp.write((char *)&tmp2, sizeof(tmp2));
+		tmp.write((char *)CurPixelData[0], sizeof(CurPixelData));
+		pthread_mutex_unlock(&mutex);
+		tmp.close();
+		cnt++;
+		#endif
+		return True;
+	}
+}
+
+/* read a event from recorded file then send it. return True when need waitforframe, else return False */
+AU_BOOL SendReplayerInput(SocketSet *c_sockset)
+{
+	uint8_t replay_type;
+	uint64_t delaytime, timestamp;
+	AU_BOOL WaitForFrame, match;
+	WaitForFrame = False;	//defualt value
+
+	if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
+		error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
+	}
+	ReplayFile.read((char *)&replay_type, 1);
+	if(!ReplayFile.eof()){
+		switch(replay_type){
+			case rfbPkt:
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a rfbPkt" << endl;
+				pthread_mutex_unlock(&mutex);
+				cout << "[Replaying] handling a rfbPkt FrameCnt: " << dec << (int)FrameCnt << endl;
+				if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
+					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
+				}
+				HandleRfbPkt(c_sockset);
+				break;
+			case timewaitPkt:
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a timewaitPkt" << endl;
+				pthread_mutex_unlock(&mutex);
+				cout << "[Replaying] handling a timewaitPkt" << endl;
+				if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
+					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
+				}
+				ReplayFile.read((char *)&delaytime, sizeof(uint64_t));
+			//	usleep(delaytime);	//us
+				break;
+			case timesyncPkt:
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a timesyncPkt" << endl;
+				pthread_mutex_unlock(&mutex);
+				cout << "[Replaying] handling a timesyncPkt" << endl;
+				if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
+					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
+				}
+				ReplayFile.read((char *)&timestamp, sizeof(uint64_t));
+				break;
+			case framewaitPkt:
+				//usleep(500*1000);		//sleep 500ms between two ReplayerInput framewaitPkt
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a framewaitPkt" << endl;
+				pthread_mutex_unlock(&mutex);
+				cout << "[Replaying] handling a framewaitPkt" << endl;
+				GetThreshold();
+				GetTargetFrame();
+				match = TryMatchFrame();
+				if(match){
+					FrameCnt++;		//increase after a frame has been matched
+				}
+				else{
+					WaitForFrame = True;
+				}
+				break;
+			case ddelayPkt:
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a ddelayPkt" << endl;
+				pthread_mutex_unlock(&mutex);
+				cout << "[Replaying] handling a ddelayPkt" << endl;
+				break;
+			case chkpointPkt:
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a chkpointPkt" << endl;
+				pthread_mutex_unlock(&mutex);
+				cout << "[Replaying] handling a chkpointPkt" << endl;
+				break;
+			case exitPkt:
+				pthread_mutex_lock(&mutex);
+				log << "[Replaying] handling a exitPkt" << endl;
+				log << "            exit Replaying mode " << endl;
+				pthread_mutex_unlock(&mutex);
+
+				// exit replay mode after a exitPkt appeared 
+				// and close the ReplayFile at the same time
+				Replaying = False;	
+				ReplayFile.close();
+				cout << "[Replaying] exit Replaying mode " << endl;
+				break;
+			default:
+				error(False, "ERROR: [SendReplayerInput] unrecognised replay file message type");
+		}
+		return WaitForFrame;
+	}
+	else{
+		error(False, "ERROR: [SendReplayerInput] Should close this file when handling a exitPkt");
+		return False;
+	}
+}
+
+/* while replaying need to use ReplayFile input instead */
+void HandleReplayerInput(SocketSet *c_sockset)
+{
+	uint32_t n, i;
+	fd_set rfds;
+	struct timeval tv;
+	static AU_BOOL WaitForFrame = False;
+	AU_BOOL match;
+	ofstream TmpPixelData;
+	char pathFrameCheck[1024];
+	memset(pathFrameCheck, 0, sizeof(pathFrameCheck));
+
+	if(WaitForFrame){
+		FD_ZERO(&rfds);
+		FD_SET(c_sockset->SocketToServer, &rfds);
+		tv.tv_sec = 10;
+		tv.tv_usec = 0;
+		n = c_sockset->SocketToServer + 1;
+		i = select(n, &rfds, NULL, NULL, &tv);
+		switch(i){
+			case 0:
+			{
+				//timeout
+				match = TryMatchFrame();
+				if(match){
+					WaitForFrame = False;
+					FrameCnt++;
+				}
+				else{
+					cout << "[Replaying HandleReplayerInput] select timeout(10s). FrameCnt = " << dec << (int)FrameCnt << endl;
+	
+					cout << "Write CurPixelData and CapPixelData into .bmp file for check" << endl;
+					INIT_BMP(TmpBMPHead);
+					sprintf(pathFrameCheck, "framein/fb%06u_raw_Current.bmp", FrameCnt);
+					TmpPixelData.open(pathFrameCheck);
+					pthread_mutex_lock(&mutex);
+					TmpPixelData.write((char *)&TmpBMPHead, sizeof(TmpBMPHead));
+					TmpPixelData.write((char *)&CurPixelData[0], sizeof(CurPixelData));
+					pthread_mutex_unlock(&mutex);
+					TmpPixelData.close();
+					sprintf(pathFrameCheck, "framein/fb%06u_raw_Capture.bmp", FrameCnt);
+					TmpPixelData.open(pathFrameCheck);
+					TmpPixelData.write((char *)&TmpBMPHead, sizeof(TmpBMPHead));
+					TmpPixelData.write((char *)&CapPixelData[0], sizeof(CapPixelData));
+					TmpPixelData.close();
+				}
+				break;
+			}
+			case 1:
+				//socket can be read now
+				match = TryMatchFrame();
+				if(match){
+					WaitForFrame = False;
+					FrameCnt++;
+				}
+				pthread_mutex_lock(&mutex);
+				log << "a new pixel data received, TryMatchFrame again. WaitForFrame = " << dec << (int)WaitForFrame << endl;
+				pthread_mutex_unlock(&mutex);
+				break;
+			default:
+				error(False, "ERROR: [HandleReplayerInput] select c_sockset->SocketToServer");
+		}
+	}
+	else{
+		WaitForFrame = SendReplayerInput(c_sockset);
+	}
 }
 
 /* return True if special keystrokes appears, otherwise return False */
@@ -93,8 +403,8 @@ AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed, AU_BOOL cur_key
 					log << "FrameCnt captured: " << dec << (int)FrameCnt << endl;
 					log << "####  End Record    ####" << endl;
 					pthread_mutex_unlock(&mutex);
+					cout << "   insert a exitPkt by default  " << endl;
 					cout << "####  End Record    ####" << endl;
-					cout << "   insert a exotPkt by default  " << endl;
 					RecordFile.write(EXIT_MSG, 1);
 					RecordFile.close();
     				PixelThres.close();
@@ -124,7 +434,7 @@ AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed, AU_BOOL cur_key
 					}
 					InitThreshold();
 				}
-				else{
+/*				else{
 					pthread_mutex_lock(&mutex);
 					log << "EventCnt captured: " << dec << (int)EventCnt << endl;
 					log << "FrameCnt captured: " << dec << (int)FrameCnt << endl;
@@ -134,6 +444,7 @@ AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed, AU_BOOL cur_key
 					ReplayFile.close();
     				PixelThresR.close();
 				}
+*/
 				ingnore_next_release = True;
 				return True;
 				break;
@@ -185,13 +496,14 @@ AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed, AU_BOOL cur_key
 }
 
 /* compare CurPixelData and CapPixelData, return the different pixel number */
+// this function should been called after pthread_mutex_lock
 uint32_t FrameCompare()
 {
 	uint32_t num_px_diff;
 	uint16_t i, j;
 	num_px_diff = 0;
-	for(i = RECT_X; i < RECT_CX; i++){
-		for(j = RECT_Y; j < RECT_CY; j++){
+	for(i = RECT_Y; i < RECT_CY; i++){
+		for(j = RECT_X; j < RECT_CX; j++){
 			if(CurPixelData[i][j] != CapPixelData[i][j]){
 				num_px_diff++;
 			}
@@ -204,15 +516,18 @@ uint32_t FrameCompare()
 void CaptureFrame()
 {
 	pthread_mutex_lock(&mutex);
+	memset(CapPixelData[0], 0, sizeof(CurPixelData));
 	memcpy(CapPixelData[0], CurPixelData[0], sizeof(CurPixelData));
 	log << "[Recording]Capture a frame pixel data(framecnt=" << dec << (int)FrameCnt << ")" << endl;
 	pthread_mutex_unlock(&mutex);
 
-	sprintf(pathRectFramePixel, "framein/fb%06u.raw", FrameCnt);
+	sprintf(pathRectFramePixel, "framein/fb%06u_raw.bmp", FrameCnt);
 	RectFramePixel.open(pathRectFramePixel);
 	if(!RectFramePixel.is_open()){
 		error(True, "Can not open a file for frame pixel data");
 	}
+	INIT_BMP(bmphead);
+	RectFramePixel.write((char *)&bmphead, sizeof(bmphead));	//write .bmp file head
 	RectFramePixel.write((char *)CapPixelData[0], sizeof(CapPixelData));
 	RectFramePixel.close();
 }
@@ -227,7 +542,11 @@ void WriteThreshold()
 	pthread_mutex_lock(&mutex);
 	log << "[Recording]Compute threshold for a captured frame(framecnt=" << dec << (int)FrameCnt << ")"  << endl;
 	num_px_diff = FrameCompare();
-	threshold = 1 - ((num_px_diff + (sum_px - num_px_diff)*0.05)*1.0)/sum_px;
+	/* in our tests, we found out the default(0.95) is too small, use 99% instead.   *
+     *                                                           --Perth Charles     */
+	//threshold = 1 - ((num_px_diff + (sum_px - num_px_diff)*0.05)*1.0)/sum_px;
+	threshold = 1 - ((num_px_diff + (sum_px - num_px_diff)*0.01)*1.0)/sum_px;
+	//threshold = 1 - (num_px_diff*1.0)/sum_px;	
 	log << "   threshold = " << setprecision(3) << threshold << endl;
 	pthread_mutex_unlock(&mutex);
 
@@ -247,7 +566,7 @@ void InsertFrameWaitPkt()
 /* insert a timewaitPkt */
 void InsertTimeWaitPkt()
 {
-	uint32_t WaitTime;	//us
+	uint64_t WaitTime;	//us
 	gettimeofday(&FrameEnd, NULL);
 	WaitTime = (FrameEnd.tv_sec - FrameBegin.tv_sec)*1000*1000 + (FrameEnd.tv_usec - FrameBegin.tv_usec);
 
@@ -257,16 +576,20 @@ void InsertTimeWaitPkt()
 	pthread_mutex_unlock(&mutex);
 
 	RecordFile.write(TIMEWAIT_MSG_HEAD, 1);
-	RecordFile.write((const char *)&WaitTime, 4);
+	RecordFile.write((const char *)&WaitTime, sizeof(uint64_t));
 	FrameBegin = FrameEnd;
 }
 
 /* insert a timesyncPkt */
 void InsertSyncPkt()
 {
+	uint64_t SyncTime = 0;	//insert zeor by now --zhongbin
 	pthread_mutex_lock(&mutex);
 	log << "[Recording]Insert a timesyncPkt(framecnt=" << dec << (int)FrameCnt << ")" << endl;
 	pthread_mutex_unlock(&mutex);
+	
+	RecordFile.write(TIMESYNC_MSG_HEAD, 1);
+	RecordFile.write((const char *)&SyncTime, sizeof(uint64_t));
 
 }
 
@@ -316,10 +639,12 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 				RecordFile.write((const char *)cbuf_ptr, HSZ_SET_PIXEL_FORMAT);
 				EventCnt++;
 			}
-
-            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_SET_PIXEL_FORMAT)){
-                return False;
-            }
+			//ignore the vnc-client usr input when replaying
+			if(!Replaying){
+            	if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_SET_PIXEL_FORMAT)){
+                	return False;
+            	}
+			}
 
             cbuf_ptr += HSZ_SET_PIXEL_FORMAT;
 
@@ -373,7 +698,7 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 					EventCnt++;
 				}
 				if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_FRAME_BUFFER_UPDATE_REQUEST) ){
-            	    return False;
+                	return False;
             	}
 			}
 
@@ -419,9 +744,12 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 				RecordFile.write((const char *)cbuf_ptr, HSZ_KEY_EVENT);
 				EventCnt++;
 			}	
-			if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_KEY_EVENT) ){
-                return False;
-            }
+			//ignore the vnc-client usr input when replaying
+			if(!Replaying){
+				if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_KEY_EVENT) ){
+            	    return False;
+            	}
+			}
 
             pthread_mutex_lock(&mutex);
             log << "#analyze packages# C-->S:rfbKeyEvent                    [Forward]" << endl;
@@ -461,9 +789,12 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 				RecordFile.write((const char *)cbuf_ptr, HSZ_POINTER_EVENT);
 				EventCnt++;
 			}
-            if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_POINTER_EVENT) ){
-                return False;
-            }
+			//ignore the vnc-client usr input when replaying
+			if(!Replaying){
+            	if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_POINTER_EVENT) ){
+                	return False;
+            	}
+			}
 
             cbuf_ptr += HSZ_POINTER_EVENT;
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
@@ -508,10 +839,18 @@ void *CTSMainLoop(void *sockset)
     cout << "Enter Client-To-Server Main Loop" << endl;
     #endif
     while(true){
-        FD_ZERO(&c_rfds);
-        FD_SET(c_sockset->SocketToClient, &c_rfds);
         tv.tv_sec = 10; //default timeout 10s
         tv.tv_usec = 0;
+		if(Replaying){
+			if(!SocketConnected(c_sockset->SocketToClient)){
+				cout << "user quit" << endl;
+            	return (void *)True;
+			}
+			HandleReplayerInput(c_sockset);
+			tv.tv_sec = 0;	// don't need to wait for vnc-client input anymore
+		}
+        FD_ZERO(&c_rfds);
+        FD_SET(c_sockset->SocketToClient, &c_rfds);
         n = c_sockset->SocketToClient + 1;
         i = select(n, &c_rfds, NULL, NULL, &tv);
         switch(i){

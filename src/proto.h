@@ -6,6 +6,52 @@ typedef uint32_t AU_BOOL;
 #define True (1)
 #endif
 
+/* Bitmap struct for .bmp file
+ * This format can be found in http://en.wikipedia.org/wiki/BMP_file_format#Example_1
+ */
+#pragma pack(push)
+#pragma pack(1)
+typedef struct _BMP_HEAD{
+	//BMP header
+	unsigned char id_field[2];
+	uint32_t bmp_size;		// bmp_size = 14 + 40 + 800*480*4 = 1536054 = 0x177036
+	uint32_t pad_1;
+	uint32_t data_offset;	//54 bytes
+	//DIB header
+	uint32_t dib_size;
+	uint32_t width;			//800
+	int32_t height;			//480 (the pixel order used is "top-to-bottom", so the stored value is -480)
+	uint16_t plane_cnt;
+	uint16_t bitperpixel;	//32bits, 4bytes
+	uint32_t compress;		//no pixel array compression used
+	uint32_t data_size;		//800*400*4 
+	uint32_t h_resolution;	//default = 2835 pixels/meter
+	uint32_t v_resolution;	//default = 2835 pixels/meter
+	uint32_t palette;			
+	uint32_t important_color;
+}BMP_HEAD;
+#pragma pack(pop)
+
+
+#define INIT_BMP(X) BMP_HEAD X = {	\
+	{'B', 'M'},						\
+	14 + 40 + 800*480*4,			\
+	0,								\
+	54,								\
+	40,			\
+	800,		\
+	-480,		\
+	1,			\
+	32,			\
+	0,			\
+	800*480*4,	\
+	2835,		\
+	2835,		\
+	0,			\
+	0			\
+}
+
+
 /* Macros for endian swapping. */
 #define Swap16(s) ( (((s) & 0xff) << 8) | (((s) >> 8) & 0xff) )
 #define Swap32(s) ( ((s) >> 24) | \
@@ -115,3 +161,8 @@ void InsertTimeWaitPkt();
 void InsertSyncPkt();
 uint32_t FrameCompare();
 void InitThreshold();
+void HandleReplayerInput(SocketSet *c_sockset);
+AU_BOOL TryMatchFrame();
+AU_BOOL SendReplayerInput(SocketSet *c_sockset);
+void HandleRfbPkt(SocketSet *c_sockset);
+AU_BOOL TryMatchFrame();

@@ -166,3 +166,4 @@ AU_BOOL TryMatchFrame();
 AU_BOOL SendReplayerInput(SocketSet *c_sockset);
 void HandleRfbPkt(SocketSet *c_sockset);
 AU_BOOL TryMatchFrame();
+AU_BOOL PeekSpecialClick(SocketSet *sockset, uint32_t *peek_result, uint16_t pointer_x, uint16_t pointer_y);

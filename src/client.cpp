@@ -18,6 +18,108 @@ AU_BOOL CheckClientBuf(uint32_t used)
     return False;
 }
 
+/* Check whether this press is special click or not. If it's special click, return True.
+ *     peek_result = 1, single-click
+ *     peek_result = 2, double-click
+ */
+AU_BOOL PeekSpecialClick(SocketSet *sockset, uint32_t *peek_result, uint16_t pointer_x, uint16_t pointer_y)
+{
+    uint32_t len, ret_len;
+	AU_BOOL Flag, Peeking;
+	unsigned char *peek_buf;
+	uint8_t msg_type, peek_state, button_mask;
+	uint16_t x_pos, y_pos;
+	uint16_t encoding_num = 0;
+
+	len = 0;
+	Peeking = Flag = True;
+	peek_state = 0;	
+	peek_buf = (unsigned char *)malloc(1024);
+	memset(peek_buf, 0, 1024);
+	
+	cout << "start peeking" << endl;
+	//sleep 500ms to make sure that if this is the first click of double-click, the press of second click will be peeked
+	usleep(500*1000);	 
+	while(Peeking){
+		if(len > 512){	//peek too much
+			Flag = False;
+			len = 0;
+			break;
+		}
+		ret_len = recv(sockset->SocketToClient, peek_buf, len + 1, MSG_PEEK);
+		if(ret_len == len){
+			if(peek_state == 0){
+				Flag = False;
+			}
+			else{
+				Flag = True;
+			}
+			break;
+		}
+		if( ret_len != len + 1 ){
+			error(True, "ERROR: [PeekSpecialClick] recv msg type");
+		}
+		msg_type = *((uint8_t *)(peek_buf + len));
+		switch(msg_type){
+			case rfbSetPixelFormat:
+			case rfbClientCutText:
+				error(False, "ERROR: [PeekSpecialClick] These message(%d) should not appear between pointer press and release.", msg_type);
+				break;
+			case rfbKeyEvent:
+				Flag = False;
+				len = 0;
+				Peeking = False;
+				break;
+			case rfbSetEncodings:
+				if( recv(sockset->SocketToClient, peek_buf, len + HSZ_SET_ENCODING, MSG_PEEK) != (len + HSZ_SET_ENCODING)){
+					error(True, "ERROR: [PeekSpecialClick] rfb set encoding message");
+				}
+				encoding_num = Swap16( *((uint16_t *)(peek_buf + len + 2)));
+				len += HSZ_SET_ENCODING + encoding_num*4;
+				break;
+			case rfbFramebufferUpdateRequest:
+				if( recv(sockset->SocketToClient, peek_buf, len + HSZ_FRAME_BUFFER_UPDATE_REQUEST, MSG_PEEK) != (len + HSZ_FRAME_BUFFER_UPDATE_REQUEST) ){
+					error(True, "ERROR: [PeekSpecialClick] frame buffer update request");
+				}
+				len += HSZ_FRAME_BUFFER_UPDATE_REQUEST;
+				break;
+			case rfbPointerEvent:
+				if( recv(sockset->SocketToClient, peek_buf, len + HSZ_POINTER_EVENT, MSG_PEEK) != (len + HSZ_POINTER_EVENT) ){
+					error(True, "ERROR: [PeekSpecialClick] pointerEvent");
+				}
+				button_mask = *(uint8_t *)(peek_buf + len + 1);
+				x_pos = *(uint16_t *)(peek_buf + len + 1 + 1);
+				y_pos = *(uint16_t *)(peek_buf + len + 1 + 3);
+				pthread_mutex_lock(&mutex);
+				log << "[special click]button_mask: " << hex << (int)button_mask << " x,y " << (int)x_pos << " " << (int)y_pos << " should be: " << (int)pointer_x << " " << (int)pointer_y <<endl;
+				log << "[special click]peek_state: " << peek_state << endl;
+				pthread_mutex_unlock(&mutex);
+				if( button_mask == 0 && peek_state == 0 && x_pos == pointer_x && y_pos == pointer_y){
+					peek_state++;
+					len += HSZ_POINTER_EVENT;
+				}
+				else if(button_mask == 1 && peek_state == 1 && x_pos == pointer_x && y_pos == pointer_y){
+					peek_state++;
+					len += HSZ_POINTER_EVENT;
+					Peeking = False;
+				}
+				else{
+					Flag = False;
+					len = 0;
+					Peeking = False;
+				}
+				break;
+			default:
+				error(False, "ERROR: [PeekSpecialClick] this message(%d) is not supported", msg_type);
+		}
+	}
+	cout << "end peeking" << endl;
+	cout << "peek_state " << (int)peek_state << endl;
+	*peek_result = peek_state;
+	free(peek_buf);
+	return Flag;
+}
+
 /* Initialize threshold list */
 void InitThreshold()
 {
@@ -95,7 +197,6 @@ void HandleRfbPkt(SocketSet *c_sockset)
 			pthread_mutex_unlock(&mutex);
 			ReplayFile.read((char *)&tmp_msg_buf[1], HSZ_KEY_EVENT - 1);
 			WriteSocket(c_sockset->SocketToServer, tmp_msg_buf, HSZ_KEY_EVENT);
-			cout << "[Replaying -> HandleRfbPkt] rfbKeyEvent message" << endl;
 			break;
 		case rfbPointerEvent:
 			pthread_mutex_lock(&mutex);
@@ -171,7 +272,8 @@ AU_BOOL TryMatchFrame()
     log << "[Replaying -> TryMatchFrame] Compare the diff between CapPixelData and CurPixelData(framecnt=" << dec << (int)FrameCnt << ")"  << endl;
     num_px_diff = FrameCompare();
     threshold = 1 - ((num_px_diff*1.0)/sum_px);
-    log << "   threshold = " << setprecision(3) << threshold << endl;
+    log << "   threshold = " << setprecision(6) << threshold << endl;
+	log << "   RfbFrameThres = " << RfbFrameThres << endl;
 	log << "   num_px_diff = " << dec << (int)num_px_diff << "  sum_px = " << (int)sum_px << endl;
     pthread_mutex_unlock(&mutex);
 
@@ -223,7 +325,6 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a rfbPkt" << endl;
 				pthread_mutex_unlock(&mutex);
-				cout << "[Replaying] handling a rfbPkt FrameCnt: " << dec << (int)FrameCnt << endl;
 				if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
 					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
 				}
@@ -233,7 +334,6 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a timewaitPkt" << endl;
 				pthread_mutex_unlock(&mutex);
-				cout << "[Replaying] handling a timewaitPkt" << endl;
 				if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
 					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
 				}
@@ -244,7 +344,6 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a timesyncPkt" << endl;
 				pthread_mutex_unlock(&mutex);
-				cout << "[Replaying] handling a timesyncPkt" << endl;
 				if((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0){
 					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
 				}
@@ -255,7 +354,6 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a framewaitPkt" << endl;
 				pthread_mutex_unlock(&mutex);
-				cout << "[Replaying] handling a framewaitPkt" << endl;
 				GetThreshold();
 				GetTargetFrame();
 				match = TryMatchFrame();
@@ -270,13 +368,11 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a ddelayPkt" << endl;
 				pthread_mutex_unlock(&mutex);
-				cout << "[Replaying] handling a ddelayPkt" << endl;
 				break;
 			case chkpointPkt:
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a chkpointPkt" << endl;
 				pthread_mutex_unlock(&mutex);
-				cout << "[Replaying] handling a chkpointPkt" << endl;
 				break;
 			case exitPkt:
 				pthread_mutex_lock(&mutex);
@@ -545,7 +641,7 @@ void WriteThreshold()
 	/* in our tests, we found out the default(0.95) is too small, use 99% instead.   *
      *                                                           --Perth Charles     */
 	//threshold = 1 - ((num_px_diff + (sum_px - num_px_diff)*0.05)*1.0)/sum_px;
-	threshold = 1 - ((num_px_diff + (sum_px - num_px_diff)*0.01)*1.0)/sum_px;
+	threshold = 1 - ((num_px_diff + (sum_px - num_px_diff)*0.03)*1.0)/sum_px;
 	//threshold = 1 - (num_px_diff*1.0)/sum_px;	
 	log << "   threshold = " << setprecision(3) << threshold << endl;
 	pthread_mutex_unlock(&mutex);
@@ -597,9 +693,11 @@ void InsertSyncPkt()
 AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 {
     uint32_t c_retnum, encoding_len, text_len;
-    uint8_t cts_msg_type;
+    uint8_t  cts_msg_type;
     uint16_t encoding_num;
-    //static uint8_t button_mask = 0;
+	uint32_t peek_result = 0;	
+	AU_BOOL SpecialClick;
+	static uint8_t FastCnt;	//if double click is checked, forward the next two pointer packets directly.
   
 	//a default setencoding packet
 	unsigned char SetEncode_buf[4 + 4*1] = {     \
@@ -618,10 +716,10 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 
     /*********************************************************
      * AutoGUI will only forward the following message type: *
+     *       rfbSetPixelFormat,                              *
      *       framebufferupdaterequest,                       *
      *       pointerevent                                    *
      *       keyevent                                        *
-     *       clientcuttext                                   *
      *********************************************************/
      switch(cts_msg_type){
         case rfbSetPixelFormat: 
@@ -646,8 +744,6 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 			}
 			//ignore the vnc-client usr input when replaying
 			if(!Replaying){
-				cout << "set pixel format " << endl;
-				hexdump(cbuf_ptr, HSZ_SET_PIXEL_FORMAT);
             	if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_SET_PIXEL_FORMAT)){
                 	return False;
             	}
@@ -759,8 +855,6 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 			}	
 			//ignore the vnc-client usr input when replaying
 			if(!Replaying){
-				cout << "key event " << endl;
-				hexdump(cbuf_ptr, HSZ_KEY_EVENT);
 				if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_KEY_EVENT) ){
             	    return False;
             	}
@@ -775,6 +869,8 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
             break;
         case rfbPointerEvent:
+			uint16_t pointer_x, pointer_y;
+			SpecialClick = False;
             //read pointerevent msg and forward it with msg_type
             ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_POINTER_EVENT - 1);
 
@@ -782,9 +878,21 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
             log << "#analyze packages# C-->S:rfbPointerEvent                [Forward]" << endl;
             pthread_mutex_unlock(&mutex);
 			if(Recording){
-            	//only capture the image before events when the button-mask changed.
-            	if( button_mask != *((uint8_t *)(cbuf_ptr+1)) ){
-                	button_mask = *((uint8_t *)(cbuf_ptr+1));
+				if(FastCnt > 0){
+					FastCnt--;
+				}
+            	//only capture the image before events when the button-mask changed.  
+            	else if( button_mask != *((uint8_t *)(cbuf_ptr+1)) ){ 
+					button_mask = *((uint8_t *)(cbuf_ptr+1)); 
+					pointer_x = *(uint64_t *)(cbuf_ptr + 1 + 1);
+					pointer_y = *(uint64_t *)(cbuf_ptr + 1 + 3);
+					if(button_mask == 1){
+						SpecialClick = PeekSpecialClick(c_sockset, &peek_result, pointer_x, pointer_y);
+						if(SpecialClick){
+							cout << "special click detected" << endl << endl;
+							FastCnt = peek_result;	
+						}
+					}
 					CaptureFrame();
 					usleep(500*1000);	//sleep 500ms before compute threshold
 					WriteThreshold();
@@ -805,8 +913,8 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 			}
 			//ignore the vnc-client usr input when replaying
 			if(!Replaying){
-				cout << "pointer " << endl;
-				hexdump(cbuf_ptr, HSZ_POINTER_EVENT);
+				//cout << "pointer msg:" << endl;
+				//hexdump(cbuf_ptr, HSZ_POINTER_EVENT);
             	if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_POINTER_EVENT) ){
                 	return False;
             	}

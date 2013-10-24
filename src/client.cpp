@@ -601,6 +601,11 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
     uint16_t encoding_num;
     //static uint8_t button_mask = 0;
   
+	//a default setencoding packet
+	unsigned char SetEncode_buf[4 + 4*1] = {     \
+    	'\x02', '\x00', '\x00', '\x01', \
+   	   	'\x00', '\x00', '\x00', '\x00', \
+	};
     //read cts_msg_type  
     c_retnum = recv(c_sockset->SocketToClient, cbuf_ptr, 1, 0);
     if(c_retnum == 0){  // socket has been closed by vnc-client
@@ -618,7 +623,7 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
      *       keyevent                                        *
      *       clientcuttext                                   *
      *********************************************************/
-    switch(cts_msg_type){
+     switch(cts_msg_type){
         case rfbSetPixelFormat: 
             //read setpixelformat msg
             ReadSocket(c_sockset->SocketToClient, cbuf_ptr + 1, HSZ_SET_PIXEL_FORMAT - 1);
@@ -641,6 +646,8 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 			}
 			//ignore the vnc-client usr input when replaying
 			if(!Replaying){
+				cout << "set pixel format " << endl;
+				hexdump(cbuf_ptr, HSZ_SET_PIXEL_FORMAT);
             	if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_SET_PIXEL_FORMAT)){
                 	return False;
             	}
@@ -665,6 +672,12 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) + encoding_len );
             //read setencodings msg data
             ReadSocket(c_sockset->SocketToClient, cbuf_ptr, encoding_len);
+			
+			//send a default message instead, to avoid the tounchkit bug --Perth Charles
+			if( !WriteSocket(c_sockset->SocketToServer, SetEncode_buf, sizeof(SetEncode_buf))){
+			    return False;
+			}
+
             cbuf_ptr += encoding_len;
             break;
         case rfbFramebufferUpdateRequest:
@@ -697,10 +710,10 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 					RecordFile.write((const char *)cbuf_ptr, HSZ_FRAME_BUFFER_UPDATE_REQUEST);
 					EventCnt++;
 				}
+			}
 				if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_FRAME_BUFFER_UPDATE_REQUEST) ){
                 	return False;
             	}
-			}
 
             cbuf_ptr += HSZ_FRAME_BUFFER_UPDATE_REQUEST;
             CheckClientBuf( (uint32_t)(cbuf_ptr - client_buf) );
@@ -746,6 +759,8 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 			}	
 			//ignore the vnc-client usr input when replaying
 			if(!Replaying){
+				cout << "key event " << endl;
+				hexdump(cbuf_ptr, HSZ_KEY_EVENT);
 				if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_KEY_EVENT) ){
             	    return False;
             	}
@@ -766,7 +781,6 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
             pthread_mutex_lock(&mutex);
             log << "#analyze packages# C-->S:rfbPointerEvent                [Forward]" << endl;
             pthread_mutex_unlock(&mutex);
-
 			if(Recording){
             	//only capture the image before events when the button-mask changed.
             	if( button_mask != *((uint8_t *)(cbuf_ptr+1)) ){
@@ -791,6 +805,8 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 			}
 			//ignore the vnc-client usr input when replaying
 			if(!Replaying){
+				cout << "pointer " << endl;
+				hexdump(cbuf_ptr, HSZ_POINTER_EVENT);
             	if( !WriteSocket(c_sockset->SocketToServer, cbuf_ptr, HSZ_POINTER_EVENT) ){
                 	return False;
             	}

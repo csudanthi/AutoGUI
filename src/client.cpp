@@ -338,7 +338,7 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
 				}
 				ReplayFile.read((char *)&delaytime, sizeof(uint64_t));
-			//	usleep(delaytime);	//us
+				usleep(delaytime);	//us
 				break;
 			case timesyncPkt:
 				pthread_mutex_lock(&mutex);
@@ -350,7 +350,8 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				ReplayFile.read((char *)&timestamp, sizeof(uint64_t));
 				break;
 			case framewaitPkt:
-				//usleep(500*1000);		//sleep 500ms between two ReplayerInput framewaitPkt
+				cout << "sleep long" << endl;
+				usleep(2*1000*1000);		//sleep 200ms between two ReplayerInput framewaitPkt
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a framewaitPkt" << endl;
 				pthread_mutex_unlock(&mutex);
@@ -695,10 +696,10 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
     uint32_t c_retnum, encoding_len, text_len;
     uint8_t  cts_msg_type;
     uint16_t encoding_num;
-	uint32_t peek_result = 0;	
 	AU_BOOL SpecialClick;
-	static uint8_t FastCnt;	//if double click is checked, forward the next two pointer packets directly.
-  
+	static struct timeval LastPointerClick = {0, 0}, CurPointerClick;
+	uint64_t PointerVal;	//us
+	
 	//a default setencoding packet
 	unsigned char SetEncode_buf[4 + 4*1] = {     \
     	'\x02', '\x00', '\x00', '\x01', \
@@ -878,23 +879,23 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
             log << "#analyze packages# C-->S:rfbPointerEvent                [Forward]" << endl;
             pthread_mutex_unlock(&mutex);
 			if(Recording){
-				if(FastCnt > 0){
-					FastCnt--;
+				gettimeofday(&CurPointerClick, NULL);
+				PointerVal = (CurPointerClick.tv_sec - LastPointerClick.tv_sec)*1000*1000 + (CurPointerClick.tv_usec - LastPointerClick.tv_usec);
+				if(PointerVal < POINTERVAL_THRES ){
+					LastPointerClick = CurPointerClick;
+					button_mask = *((uint8_t *)(cbuf_ptr+1)); 
 				}
             	//only capture the image before events when the button-mask changed.  
             	else if( button_mask != *((uint8_t *)(cbuf_ptr+1)) ){ 
 					button_mask = *((uint8_t *)(cbuf_ptr+1)); 
 					pointer_x = *(uint64_t *)(cbuf_ptr + 1 + 1);
 					pointer_y = *(uint64_t *)(cbuf_ptr + 1 + 3);
-					if(button_mask == 1){
-						SpecialClick = PeekSpecialClick(c_sockset, &peek_result, pointer_x, pointer_y);
-						if(SpecialClick){
-							cout << "special click detected" << endl << endl;
-							FastCnt = peek_result;	
-						}
-					}
 					CaptureFrame();
 					usleep(500*1000);	//sleep 500ms before compute threshold
+					if(button_mask == 1){
+						cout << "get new time" << endl;
+						gettimeofday(&LastPointerClick, NULL);
+					}
 					WriteThreshold();
 					InsertFrameWaitPkt();
 					if(!FirstInput){

@@ -338,7 +338,7 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 					error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay file ");
 				}
 				ReplayFile.read((char *)&delaytime, sizeof(uint64_t));
-				usleep(delaytime);	//us
+				//usleep(delaytime);	//us
 				break;
 			case timesyncPkt:
 				pthread_mutex_lock(&mutex);
@@ -350,8 +350,8 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
 				ReplayFile.read((char *)&timestamp, sizeof(uint64_t));
 				break;
 			case framewaitPkt:
-				cout << "sleep long" << endl;
-				usleep(2*1000*1000);		//sleep 200ms between two ReplayerInput framewaitPkt
+				//cout << "sleep long" << endl;
+				//usleep(2*1000*1000);		//sleep 200ms between two ReplayerInput framewaitPkt
 				pthread_mutex_lock(&mutex);
 				log << "[Replaying] handling a framewaitPkt" << endl;
 				pthread_mutex_unlock(&mutex);
@@ -893,7 +893,7 @@ AU_BOOL HandleCTSMsg(SocketSet *c_sockset)
 					CaptureFrame();
 					usleep(500*1000);	//sleep 500ms before compute threshold
 					if(button_mask == 1){
-						cout << "get new time" << endl;
+						//cout << "get new time" << endl;
 						gettimeofday(&LastPointerClick, NULL);
 					}
 					WriteThreshold();

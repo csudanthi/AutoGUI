@@ -70,7 +70,7 @@
 #define BASE_PATH "framein/"
 
 //Threshold for continuous pointer events
-#define POINTERVAL_THRES (200*1000)		//200ms
+#define POINTERVAL_THRES (100*1000)		//100ms
 
 
 

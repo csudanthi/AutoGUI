@@ -267,7 +267,7 @@ void GetTargetFrame()
     // read .bmp file head
     RectFramePixelR.read((char *)bmp_head, sizeof(bmp_head));
     RectFramePixelR.read((char *)CapPixelData[0], sizeof(CapPixelData));
-    if ( (RectFramePixelR.rdstate() & (RectFramePixelR.fail() |
+    if ( (RectFramePixelR.rdstate() && (RectFramePixelR.fail() ||
           RectFramePixelR.bad())) != 0) {
         error(True, "[Replaying -> GetTargetFrame] there is something wrong"
                     " when reading replaying file");
@@ -346,7 +346,7 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
     AU_BOOL WaitForFrame, match;
     WaitForFrame = False;    // defualt value
 
-    if ((ReplayFile.rdstate() & (ReplayFile.fail() | ReplayFile.bad())) != 0) {
+    if ((ReplayFile.rdstate() && (ReplayFile.fail() || ReplayFile.bad())) != 0) {
         error(True, "ERROR: [Replaying -> SendReplayerInput] reading replay"
                     " file ");
     }
@@ -357,7 +357,7 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
             pthread_mutex_lock(&mutex);
             log << "[Replaying] handling a rfbPkt" << endl;
             pthread_mutex_unlock(&mutex);
-            if ((ReplayFile.rdstate() & (ReplayFile.fail() |
+            if ((ReplayFile.rdstate() && (ReplayFile.fail() ||
                  ReplayFile.bad())) != 0) {
                 error(True, "ERROR: [Replaying -> SendReplayerInput]"
                             " reading replay file ");
@@ -368,7 +368,7 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
             pthread_mutex_lock(&mutex);
             log << "[Replaying] handling a timewaitPkt" << endl;
             pthread_mutex_unlock(&mutex);
-            if ((ReplayFile.rdstate() & (ReplayFile.fail() |
+            if ((ReplayFile.rdstate() && (ReplayFile.fail() ||
                 ReplayFile.bad())) != 0) {
                 error(True, "ERROR: [Replaying -> SendReplayerInput]"
                             " reading replay file ");
@@ -380,7 +380,7 @@ AU_BOOL SendReplayerInput(SocketSet *c_sockset)
             pthread_mutex_lock(&mutex);
             log << "[Replaying] handling a timesyncPkt" << endl;
             pthread_mutex_unlock(&mutex);
-            if ((ReplayFile.rdstate() & (ReplayFile.fail() |
+            if ((ReplayFile.rdstate() && (ReplayFile.fail() ||
                 ReplayFile.bad())) != 0) {
                 error(True, "ERROR: [Replaying -> SendReplayerInput] "
                             "reading replay file ");

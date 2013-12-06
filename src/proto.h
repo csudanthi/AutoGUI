@@ -1,4 +1,3 @@
-
 /* boolean type for AutoGUI */
 typedef uint32_t AU_BOOL;
 #ifndef True
@@ -7,48 +6,59 @@ typedef uint32_t AU_BOOL;
 #endif
 
 /* Bitmap struct for .bmp file
- * This format can be found in http://en.wikipedia.org/wiki/BMP_file_format#Example_1
+ * This format can be found in
+ * http://en.wikipedia.org/wiki/BMP_file_format#Example_1
  */
 #pragma pack(push)
 #pragma pack(1)
 typedef struct _BMP_HEAD{
-	//BMP header
-	unsigned char id_field[2];
-	uint32_t bmp_size;		// bmp_size = 14 + 40 + 800*480*4 = 1536054 = 0x177036
-	uint32_t pad_1;
-	uint32_t data_offset;	//54 bytes
-	//DIB header
-	uint32_t dib_size;
-	uint32_t width;			//800
-	int32_t height;			//480 (the pixel order used is "top-to-bottom", so the stored value is -480)
-	uint16_t plane_cnt;
-	uint16_t bitperpixel;	//32bits, 4bytes
-	uint32_t compress;		//no pixel array compression used
-	uint32_t data_size;		//800*400*4 
-	uint32_t h_resolution;	//default = 2835 pixels/meter
-	uint32_t v_resolution;	//default = 2835 pixels/meter
-	uint32_t palette;			
-	uint32_t important_color;
+    //BMP header
+    unsigned char id_field[2];
+    // bmp_size = 14 + 40 + 800*480*4 = 1536054 = 0x177036
+    uint32_t bmp_size;
+    uint32_t pad_1;
+    // 54 bytes
+    uint32_t data_offset;
+    //DIB header
+    uint32_t dib_size;
+    // 800
+    uint32_t width;
+    // 480 (the pixel order used is "top-to-bottom",
+    // so the stored value is -480)
+    int32_t height;
+    uint16_t plane_cnt;
+    // 32bits, 4bytes
+    uint16_t bitperpixel;
+    // no pixel array compression used
+    uint32_t compress;
+    // 800*400*4
+    uint32_t data_size;
+    // default = 2835 pixels/meter
+    uint32_t h_resolution;
+    // default = 2835 pixels/meter
+    uint32_t v_resolution;
+    uint32_t palette;
+    uint32_t important_color;
 }BMP_HEAD;
 #pragma pack(pop)
 
 
-#define INIT_BMP(X) BMP_HEAD X = {	\
-	{'B', 'M'},						\
-	14 + 40 + 800*480*4,			\
-	0,								\
-	54,								\
-	40,			\
-	800,		\
-	-480,		\
-	1,			\
-	32,			\
-	0,			\
-	800*480*4,	\
-	2835,		\
-	2835,		\
-	0,			\
-	0			\
+#define INIT_BMP(X) BMP_HEAD X = {  \
+    {'B', 'M'},                     \
+    14 + 40 + 800*480*4,            \
+    0,                              \
+    54,                             \
+    40,                             \
+    800,                            \
+    -480,                           \
+    1,                              \
+    32,                             \
+    0,                              \
+    800*480*4,                      \
+    2835,                           \
+    2835,                           \
+    0,                              \
+    0                               \
 }
 
 
@@ -77,10 +87,10 @@ typedef struct _SocketSet{
 
 /* Structure used to specify pixel format */
 typedef struct _PixelFormat{
-    uint8_t bitsPerPixel;	/*8,16,32 only*/
-    uint8_t depth;		/*8 to 32*/
-    uint8_t bigEndian;		/*True or False*/
-    uint8_t trueColour;		/*True or False*/
+    uint8_t bitsPerPixel;    /*8,16,32 only*/
+    uint8_t depth;        /*8 to 32*/
+    uint8_t bigEndian;        /*True or False*/
+    uint8_t trueColour;        /*True or False*/
     /* the following field iare only meaningful if trueColor is true */
     uint16_t redMax;
     uint16_t greenMax;
@@ -99,24 +109,25 @@ typedef struct _PixelFormat{
  * This tells the client the width and height of the server's framebuffer,
  * its pixel format and the name associated with the desktop
  */
-typedef struct _ServerInitMsg{
+typedef struct _ServerInitMsg {
     uint16_t framebufferWidth;
     uint16_t framebufferHeight;
-    PixelFormat format;	/* the server preferredd pixel format */
+    /* the server preferredd pixel format */
+    PixelFormat format;
     uint32_t nameLength;
     /* followed by char name[nameLength] */
-}ServerInitMsg;
+} ServerInitMsg;
 #define SZ_SERVER_INIT_MSG (8 + SZ_PIXEL_FORMAT)
 
 /* Types of packets that can be received/write from/to capture file */
-enum EventPkt{
-	rfbPkt,
-	timewaitPkt,
-	timesyncPkt,
-	framewaitPkt,
-	ddelayPkt,
-	chkpointPkt,
-	exitPkt
+enum EventPkt {
+    rfbPkt,
+    timewaitPkt,
+    timesyncPkt,
+    framewaitPkt,
+    ddelayPkt,
+    chkpointPkt,
+    exitPkt
 };
 #define RFB_MSG_HEAD "\0"
 #define TIMEWAIT_MSG_HEAD "\1"
@@ -153,7 +164,8 @@ void *CTSMainLoop(void *sockset);
 void WriteClientBuf();
 AU_BOOL ChechClientBuf(uint32_t used);
 AU_BOOL HandleCTSMsg(SocketSet *c_sockset);
-AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed, AU_BOOL cur_key_state);
+AU_BOOL HandleSpecialKeys(uint32_t cur_key, AU_BOOL CtrlPressed,
+                          AU_BOOL cur_key_state);
 void CaptureFrame();
 void WriteThreshold();
 void InsertFrameWaitPkt();
@@ -166,4 +178,5 @@ AU_BOOL TryMatchFrame();
 AU_BOOL SendReplayerInput(SocketSet *c_sockset);
 void HandleRfbPkt(SocketSet *c_sockset);
 AU_BOOL TryMatchFrame();
-AU_BOOL PeekSpecialClick(SocketSet *sockset, uint32_t *peek_result, uint16_t pointer_x, uint16_t pointer_y);
+AU_BOOL PeekSpecialClick(SocketSet *sockset, uint32_t *peek_result,
+                         uint16_t pointer_x, uint16_t pointer_y);

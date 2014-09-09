@@ -46,8 +46,8 @@ To be as simplest as possible, AutoGUI only supports the RAW encoding for pixel 
 c. At minimum, all that is necessary for the AutoGUI interceptor is to record the VNC session and dump out some formatted record files which are used by gem5 vncreplayer to replay. Though, for debug purpose, repalying with AutoGUI is also useful since the QEMU is faster than gem5.  
 
 d. What will produce after recorded a vnc stream ?  
-	UserIn.pkts: the data AutoGUI received from vnc-client
-	VncOut.pkts: the data AutoGUI received from vnc-server
-	fb.thres: the threshold for each frame
-	*.bmp: the bitmap data of captured frames
-	log.txt: log information
+	UserIn.pkts: the data AutoGUI received from vnc-client  
+	VncOut.pkts: the data AutoGUI received from vnc-server  
+	fb.thres: the threshold for each frame  
+	*.bmp: the bitmap data of captured frames  
+	log.txt: log information  

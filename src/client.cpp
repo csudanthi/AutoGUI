@@ -524,7 +524,7 @@ void HandleReplayerInput(SocketSet *c_sockset)
             break;
           case 1:
             // socket can be read now
-	          GetThreshold();
+	    GetThreshold();
             GetTargetFrame();
             match = TryMatchFrame();
             if (match) {

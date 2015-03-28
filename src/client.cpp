@@ -490,6 +490,8 @@ void HandleReplayerInput(SocketSet *c_sockset)
         switch (i) {
           case 0:
             // timeout
+            GetThreshold();
+            GetTargetFrame();
             match = TryMatchFrame();
             if (match) {
                 WaitForFrame = False;
@@ -522,6 +524,8 @@ void HandleReplayerInput(SocketSet *c_sockset)
             break;
           case 1:
             // socket can be read now
+	          GetThreshold();
+            GetTargetFrame();
             match = TryMatchFrame();
             if (match) {
                 WaitForFrame = False;
